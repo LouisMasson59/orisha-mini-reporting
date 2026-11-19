@@ -1,0 +1,17 @@
+{
+  "timezone": "Europe/Paris",
+  "page_size": 100,
+  "sales_price_list": "Sales Price List",
+  "stores": [
+    { "code": "0001", "api_name": "Villeneuve d'Ascq", "label": "Villeneuve d'Ascq", "warehouse": "0001", "type": "Magasin" },
+    { "code": "0002", "api_name": "Passy", "label": "Paris Passy", "warehouse": "0002", "type": "Magasin" },
+    { "code": "0003", "api_name": "A_RENSEIGNER", "label": "Magasin 0003", "warehouse": "0003", "type": "Magasin" },
+    { "code": "ECOM", "api_name": "E-Commerce", "label": "E-Commerce", "warehouse": "E-Commerce", "type": "Web" }
+  ],
+  "purchase_orgs": ["France"],
+  "purchase_history_days": 180,
+  "excluded_order_flags": ["isCancelled", "isVoid", "isDeleted", "isDraftOrder", "isLayaway"],
+  "purchase_document_keywords": ["purchase", "achat", "compra"],
+  "overstock_days": 90,
+  "sales_window_days": 30
+}

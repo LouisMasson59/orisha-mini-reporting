@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini-reporting Orisha Commerce</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="vendor/chart.umd.js"></script>
+<style>
+  :root{
+    --violet:#482882; --violet2:#6946AA; --magenta:#E8005F; --jaune:#FFBC00; --teal:#12B5A4;
+    --ink:#1d1b26; --ink2:#5b5868; --muted:#8a8796; --line:#ececf1; --bg:#f6f5fa; --card:#ffffff;
+    --good:#1a7f4b; --good-bg:#e6f4ec; --warn:#9a6700; --warn-bg:#fdf3d7; --crit:#b42318; --crit-bg:#fdeceb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Calibri,"Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);font-size:15px}
+  h1,h2,h3,.poppins{font-family:Poppins,Calibri,sans-serif}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:14px 28px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  header h1{font-size:20px;margin:0;color:var(--violet);font-weight:600}
+  .brand{display:flex;align-items:center;gap:10px;margin-left:auto}
+  .brand .dot{width:12px;height:12px;border-radius:50%;background:var(--magenta);box-shadow:16px 0 0 var(--jaune),32px 0 0 var(--teal)}
+  .brand span{font-family:Poppins;font-weight:700;color:var(--violet);margin-left:34px;letter-spacing:.2px}
+  .badge{font-size:12px;padding:3px 10px;border-radius:99px;background:#efeaf8;color:var(--violet);font-weight:600}
+  .badge.sim{background:var(--warn-bg);color:var(--warn)}
+  .maj{color:var(--muted);font-size:13px}
+  nav{display:flex;gap:4px;padding:0 28px;background:#fff;border-bottom:1px solid var(--line)}
+  nav button{border:0;background:none;padding:12px 16px;font:600 14px Poppins;color:var(--ink2);cursor:pointer;border-bottom:3px solid transparent}
+  nav button.on{color:var(--violet);border-color:var(--magenta)}
+  .filters{display:flex;gap:12px;align-items:center;padding:16px 28px 0;flex-wrap:wrap}
+  .filters label{font-size:13px;color:var(--ink2);display:flex;gap:6px;align-items:center}
+  select{font:inherit;padding:6px 10px;border:1px solid #d9d6e3;border-radius:8px;background:#fff;color:var(--ink)}
+  main{padding:16px 28px 40px}
+  .grid{display:grid;gap:16px}
+  .g-hero{grid-template-columns:minmax(260px,1.2fr) repeat(auto-fit,minmax(150px,1fr))}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:0}
+  .card h3{margin:0 0 2px;font-size:15px;font-weight:600}
+  .card .sub{color:var(--muted);font-size:13px;margin-bottom:10px}
+  .tile .lbl{color:var(--ink2);font-size:13px}
+  .tile .val{font-family:Poppins;font-weight:600;font-size:26px;margin-top:4px}
+  .tile.hero{background:linear-gradient(135deg,var(--violet),var(--violet2));color:#fff;border:0}
+  .tile.hero .lbl{color:#e5ddf5}
+  .tile.hero .val{font-size:48px;line-height:1.1}
+  .delta{font-size:13px;margin-top:4px;color:var(--ink2)}
+  .delta b.up{color:var(--good)} .delta b.down{color:var(--crit)}
+  .tile.hero .delta{color:#e5ddf5} .tile.hero .delta b{color:#fff}
+  .chart{position:relative;height:260px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-weight:600;color:var(--ink2);font-size:12px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--line);padding:6px 8px}
+  td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  td.n,th.n{text-align:right}
+  .bar{height:8px;border-radius:4px;background:var(--violet2);min-width:2px}
+  .st{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap}
+  .st.good{background:var(--good-bg);color:var(--good)} .st.warn{background:var(--warn-bg);color:var(--warn)} .st.crit{background:var(--crit-bg);color:var(--crit)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink2);margin-bottom:6px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  details{margin-top:8px;font-size:13px;color:var(--ink2)} summary{cursor:pointer}
+  .heat td.c{text-align:right;font-size:13px}
+  .empty{color:var(--muted);padding:24px;text-align:center}
+  .hidden{display:none !important}
+  @media (max-width:700px){header,nav,.filters,main{padding-left:14px;padding-right:14px}.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mini-reporting retail</h1>
+  <span class="badge" id="srcBadge">Event</span>
+  <span class="maj" id="maj"></span>
+  <div class="brand" aria-label="Orisha Commerce"><div class="dot"></div><span>orisha commerce</span></div>
+</header>
+<nav>
+  <button class="on" data-tab="ventes">Ventes du jour</button>
+  <button data-tab="stocks">Stocks &amp; achats</button>
+</nav>
+<div class="filters">
+  <label>Magasin <select id="fStore"></select></label>
+  <label id="lblDate">Journée <select id="fDate"></select></label>
+  <span class="maj" id="note"></span>
+</div>
+<main>
+  <!-- ============================ VENTES ============================ -->
+  <section id="tab-ventes">
+    <div class="grid g-hero" id="tiles"></div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>CA TTC par heure</h3><div class="sub" id="subHeure"></div>
+        <div class="legend" id="legHeure"></div><div class="chart"><canvas id="cHeure"></canvas></div>
+        <details><summary>Voir les données</summary><div id="tHeure"></div></details></div>
+      <div class="card"><h3>Tendance sur 30 jours</h3><div class="sub">CA TTC par jour (journées complètes)</div>
+        <div class="legend" id="legTrend"></div><div class="chart"><canvas id="cTrend"></canvas></div>
+        <details><summary>Voir les données</summary><div id="tTrend"></div></details></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>Top 10 produits</h3><div class="sub">Classés par CA TTC</div><div id="topProd"></div></div>
+      <div class="card"><h3>Vendeurs</h3><div class="sub">CA TTC, tickets et panier moyen</div><div id="vendeurs"></div></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>Secteurs</h3><div class="sub">CA TTC et taux de marge</div><div id="secteurs"></div></div>
+      <div class="card"><h3>Moyens de paiement</h3><div class="sub">Montants encaissés</div><div id="paiements"></div>
+        <h3 style="margin-top:18px" id="hMag">Magasins</h3><div class="sub" id="subMag">CA TTC de la journée</div><div id="magasins"></div></div>
+    </div>
+  </section>
+
+  <!-- ============================ STOCKS & ACHATS ============================ -->
+  <section id="tab-stocks" class="hidden">
+    <div class="grid g-hero" id="tilesStock"></div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>Valeur de stock</h3><div class="sub">Photo quotidienne, au coût</div>
+        <div class="legend" id="legStock"></div><div class="chart"><canvas id="cStock"></canvas></div>
+        <details><summary>Voir les données</summary><div id="tStock"></div></details></div>
+      <div class="card"><h3>Stock par secteur</h3><div class="sub" id="subHeat">Valeur et couverture (jours de vente)</div><div id="heat"></div></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>Ruptures sur articles vendus</h3><div class="sub">Stock nul alors que l'article s'est vendu sur 30 jours</div><div id="ruptures"></div></div>
+      <div class="card"><h3>Stock dormant</h3><div class="sub">En stock, aucune vente sur 30 jours</div><div id="dormants"></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Performance fournisseurs</h3><div class="sub">Sur les 30 derniers jours · ✓ ≥ 95 % · ! 85–95 % · ✕ &lt; 85 %</div><div id="fournisseurs"></div></div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>Commandes fournisseurs en retard</h3><div class="sub">Lignes non soldées après la date prévue</div><div id="retards"></div></div>
+      <div class="card"><h3>Réceptions fournisseurs</h3><div class="sub">Valeur reçue par jour, 30 derniers jours</div><div class="chart"><canvas id="cRec"></canvas></div>
+        <details><summary>Voir les données</summary><div id="tRec"></div></details></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const STORE_COLORS = {"0001":"#6946AA","0002":"#E8005F","0003":"#12B5A4","ECOM":"#D69800"}; // validées (contraste : légende + tableau)
+const PRIMARY = "#482882", GHOST = "#b9b5c6", GRID = "#ececf1";
+const S = {store:"ALL", date:null, tab:"ventes"};
+let CMP = "vs même jour S-1";
+const charts = {};
+const eur0 = new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:0});
+const eur2 = new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:2});
+const n0 = new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
+const n1 = new Intl.NumberFormat("fr-FR",{maximumFractionDigits:1});
+const compact = v => Math.abs(v) >= 10000 ? new Intl.NumberFormat("fr-FR",{notation:"compact",maximumFractionDigits:1}).format(v)+" €" : eur0.format(v);
+const pct = v => v==null ? "–" : n1.format(v)+" %";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const addDays = (d,k) => { const x = new Date(d+"T12:00:00"); x.setDate(x.getDate()+k); return x.toISOString().slice(0,10); };
+const frDate = d => new Date(d+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
+const shortDate = d => new Date(d+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"});
+
+async function j(path){ try{ const r = await fetch("data/"+path+"?v="+Date.now()); return r.ok ? r.json() : null; }catch(e){ return null; } }
+
+Chart.defaults.font.family = 'Calibri,"Segoe UI",Arial,sans-serif';
+Chart.defaults.color = "#5b5868";
+Chart.defaults.plugins.legend.display = false;
+function draw(id, cfg){
+  if (charts[id]) charts[id].destroy();
+  cfg.options = Object.assign({responsive:true, maintainAspectRatio:false, animation:false,
+    interaction:{mode:"index", intersect:false},
+    plugins:{tooltip:{backgroundColor:"#1d1b26", padding:10, callbacks:{label:c => ` ${c.dataset.label} : ${eur0.format(c.parsed.y)}`}}},
+    scales:{x:{grid:{display:false}, ticks:{maxRotation:0, autoSkipPadding:12}},
+            y:{beginAtZero:true, grid:{color:GRID}, border:{display:false}, ticks:{callback:v => compact(v)}}}}, cfg.options||{});
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+const barDs = (label, data, color) => ({label, data, backgroundColor:color, borderRadius:{topLeft:4, topRight:4}, borderSkipped:"start", maxBarThickness:24, categoryPercentage:.8, barPercentage:.9});
+const lineDs = (label, data, color, dashed) => ({type:"line", label, data, borderColor:color, backgroundColor:color, borderWidth:2, pointRadius:0, pointHoverRadius:5, pointHoverBorderColor:"#fff", pointHoverBorderWidth:2, tension:.15, spanGaps:true, borderDash: dashed?[4,3]:[]});
+const legend = (el, items) => document.getElementById(el).innerHTML = items.map(([l,c]) => `<span><i style="background:${c}"></i>${esc(l)}</span>`).join("");
+const dataTable = (el, head, rows) => document.getElementById(el).innerHTML = `<table><tr>${head.map((h,i)=>`<th class="${i?'n':''}">${esc(h)}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i?'n':''}">${c}</td>`).join("")}</tr>`).join("")}</table>`;
+
+function storeLabel(code){ return (S.meta.magasins.find(m=>m.code===code)||{label:code}).label; }
+function block(day){ if(!day) return null; return S.store==="ALL" ? day.total : (day.magasins||{})[S.store]; }
+function histDay(date){
+  const rows = (S.hist||[]).filter(r => r.date===date && (S.store==="ALL" || r.magasin===S.store));
+  if(!rows.length) return null;
+  const t = rows.reduce((a,r)=>({ca_ttc:a.ca_ttc+(r.ca_ttc||0), ca_ht:a.ca_ht+(r.ca_ht||0), tickets:a.tickets+(r.tickets||0), articles:a.articles+(r.articles||0), marge:a.marge+(r.marge||0), remise:a.remise+(r.remise||0)}), {ca_ttc:0,ca_ht:0,tickets:0,articles:0,marge:0,remise:0});
+  t.panier = t.tickets ? t.ca_ttc/t.tickets : null; t.upt = t.tickets ? t.articles/t.tickets : null;
+  t.taux_marge = t.ca_ht ? t.marge/t.ca_ht*100 : null; t.taux_remise = (t.ca_ttc+t.remise) ? t.remise/(t.ca_ttc+t.remise)*100 : null;
+  return t;
+}
+function delta(cur, prev, goodUp=true, isPts=false){
+  if(cur==null || prev==null || (!isPts && !prev)) return `<div class="delta">${CMP} : –</div>`;
+  const d = isPts ? cur-prev : (cur-prev)/Math.abs(prev)*100;
+  const up = d >= 0, good = up===goodUp;
+  return `<div class="delta">${CMP} : <b class="${good?'up':'down'}">${up?'▲':'▼'} ${n1.format(Math.abs(d))}${isPts?' pt':' %'}</b></div>`;
+}
+
+// ------------------------------------------------------------------ VENTES
+function renderVentes(){
+  const b = block(S.jour), k = b && b.kpi;
+  const live = S.date === S.jours[S.jours.length-1] && S.date === S.meta.maj.slice(0,10);
+  let p = histDay(addDays(S.date,-7)), cmpLbl = "vs même jour S-1";
+  const bp = block(S.jourS1);
+  if(live && p && bp && bp.par_heure && bp.tickets_heure){
+    // journée en cours : on compare à S-1 jusqu'à la même heure
+    const h = +S.meta.maj.slice(11,13), f = +S.meta.maj.slice(14,16)/60; // heure de Paris de la dernière collecte
+    const cum = arr => arr.slice(0,h).reduce((a,x)=>a+(x||0),0) + (arr[h]||0)*f;
+    p = Object.assign({}, p, {ca_ttc:cum(bp.par_heure), tickets:cum(bp.tickets_heure)});
+    p.panier = p.tickets ? p.ca_ttc/p.tickets : null;
+    cmpLbl = "vs S-1 même heure";
+  }
+  CMP = cmpLbl;
+  if(!k){ document.getElementById("tiles").innerHTML = `<div class="card empty">Aucune donnée pour cette journée.</div>`; return; }
+  const tiles = [
+    ["CA TTC "+(live?"en cours":"de la journée"), eur0.format(k.ca_ttc), delta(k.ca_ttc, p&&p.ca_ttc), true],
+    ["Tickets", n0.format(k.tickets), delta(k.tickets, p&&p.tickets)],
+    ["Panier moyen", k.panier==null?"–":eur2.format(k.panier), delta(k.panier, p&&p.panier)],
+    ["Articles par ticket", k.upt==null?"–":n1.format(k.upt), delta(k.upt, p&&p.upt)],
+    ["Taux de marge", pct(k.taux_marge), delta(k.taux_marge, p&&p.taux_marge, true, true)],
+    ["Taux de remise", pct(k.taux_remise), delta(k.taux_remise, p&&p.taux_remise, false, true)],
+  ];
+  document.getElementById("tiles").innerHTML = tiles.map(([l,v,d,h]) => `<div class="card tile ${h?'hero':''}"><div class="lbl">${l}</div><div class="val">${v}</div>${d}</div>`).join("");
+
+  // Heures (aujourd'hui vs même jour S-1)
+  const hb = b.par_heure, hp = block(S.jourS1) && block(S.jourS1).par_heure;
+  const hours = [...Array(24).keys()];
+  let lo = hours.findIndex(h => (hb&&hb[h]) || (hp&&hp[h])), hi = 23 - [...hours].reverse().findIndex(h => (hb&&hb[h]) || (hp&&hp[h]));
+  if(lo<0){lo=8;hi=20}
+  const hs = hours.slice(lo, hi+1);
+  document.getElementById("subHeure").textContent = frDate(S.date) + (hb ? "" : (k.tickets ? " · heure non disponible pour cette journée" : " · aucune vente pour l'instant"));
+  if(hb){
+    const ds = [barDs("Ce jour", hs.map(h=>hb[h]||0), PRIMARY)];
+    if(hp) ds.push(lineDs("Même jour S-1", hs.map(h=>hp[h]||0), GHOST, true));
+    legend("legHeure", hp ? [["Ce jour",PRIMARY],["Même jour S-1",GHOST]] : []);
+    draw("cHeure", {type:"bar", data:{labels:hs.map(h=>h+"h"), datasets:ds}});
+    dataTable("tHeure", ["Heure","Ce jour","S-1"], hs.map(h=>[h+"h", eur0.format(hb[h]||0), hp?eur0.format(hp[h]||0):"–"]));
+  } else { if(charts.cHeure) charts.cHeure.destroy(); legend("legHeure", []); document.getElementById("tHeure").innerHTML=""; }
+
+  // Tendance 30 jours
+  const tEnd = live ? addDays(S.date,-1) : S.date; // la journée en cours (partielle) n'entre pas dans la tendance
+  const dates = []; for(let i=29;i>=0;i--) dates.push(addDays(tEnd,-i));
+  const stores = S.store==="ALL" ? S.meta.magasins.map(m=>m.code) : [S.store];
+  const val = (d,c) => { const r = S.hist.find(x=>x.date===d && x.magasin===c); return r && r.tickets ? r.ca_ttc : null; }; // jour fermé = trou
+  draw("cTrend", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c => lineDs(storeLabel(c), dates.map(d=>val(d,c)), STORE_COLORS[c]||PRIMARY))}});
+  legend("legTrend", stores.length>1 ? stores.map(c=>[storeLabel(c), STORE_COLORS[c]]) : []);
+  dataTable("tTrend", ["Date", ...stores.map(storeLabel)], dates.map(d => [shortDate(d), ...stores.map(c => { const v=val(d,c); return v==null?"–":eur0.format(v); })]));
+
+  // Top produits
+  const top = (b.produits||[]).slice(0,10), maxP = Math.max(1, ...top.map(x=>x.ca_ttc));
+  document.getElementById("topProd").innerHTML = top.length ? `<table><tr><th>Produit</th><th>Secteur</th><th class="n">Qté</th><th class="n">CA TTC</th><th style="width:22%"></th></tr>${top.map(x=>`<tr><td>${esc(x.nom)}</td><td>${esc(x.secteur)}</td><td class="n">${n0.format(x.qte)}</td><td class="n">${eur0.format(x.ca_ttc)}</td><td><div class="bar" style="width:${x.ca_ttc/maxP*100}%"></div></td></tr>`).join("")}</table>` : `<div class="empty">Aucune vente</div>`;
+
+  // Vendeurs
+  const v = b.vendeurs||[], maxV = Math.max(1, ...v.map(x=>x.ca_ttc));
+  document.getElementById("vendeurs").innerHTML = v.length ? `<table><tr><th>Vendeur</th><th class="n">CA TTC</th><th class="n">Tickets</th><th class="n">Panier</th><th style="width:22%"></th></tr>${v.map(x=>`<tr><td>${esc(x.nom)}</td><td class="n">${eur0.format(x.ca_ttc)}</td><td class="n">${n0.format(x.tickets)}</td><td class="n">${x.tickets?eur0.format(x.ca_ttc/x.tickets):"–"}</td><td><div class="bar" style="width:${Math.max(0,x.ca_ttc)/maxV*100}%"></div></td></tr>`).join("")}</table>` : `<div class="empty">Aucune vente</div>`;
+
+  // Secteurs
+  const sec = Object.entries(b.secteurs||{}), maxS = Math.max(1, ...sec.map(([,x])=>x.ca_ttc));
+  document.getElementById("secteurs").innerHTML = sec.length ? `<table><tr><th>Secteur</th><th class="n">CA TTC</th><th class="n">Marge</th><th style="width:30%"></th></tr>${sec.map(([n,x])=>`<tr><td>${esc(n)}</td><td class="n">${eur0.format(x.ca_ttc)}</td><td class="n">${x.ca_ht?pct(x.marge/x.ca_ht*100):"–"}</td><td><div class="bar" style="width:${Math.max(0,x.ca_ttc)/maxS*100}%"></div></td></tr>`).join("")}</table>` : `<div class="empty">Aucune vente</div>`;
+
+  // Paiements
+  const pay = Object.entries(b.paiements||{}), tot = pay.reduce((a,[,x])=>a+x,0) || 1, maxPay = Math.max(1, ...pay.map(([,x])=>x));
+  document.getElementById("paiements").innerHTML = pay.length ? `<table>${pay.map(([n,x])=>`<tr><td>${esc(n)}</td><td class="n">${eur0.format(x)}</td><td class="n">${pct(x/tot*100)}</td><td style="width:30%"><div class="bar" style="width:${Math.max(0,x)/maxPay*100}%"></div></td></tr>`).join("")}</table>` : `<div class="empty">Aucun encaissement</div>`;
+
+  // Magasins (vue groupe uniquement)
+  const showMag = S.store==="ALL";
+  ["hMag","subMag","magasins"].forEach(id => document.getElementById(id).classList.toggle("hidden", !showMag));
+  if(showMag){
+    const ms = S.meta.magasins.map(m => ({code:m.code, label:m.label, k:(S.jour.magasins[m.code]||{}).kpi||{}}));
+    const maxM = Math.max(1, ...ms.map(m=>m.k.ca_ttc||0));
+    document.getElementById("magasins").innerHTML = `<table><tr><th>Magasin</th><th class="n">CA TTC</th><th class="n">Tickets</th><th class="n">Panier</th><th style="width:26%"></th></tr>${ms.map(m=>`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${STORE_COLORS[m.code]};margin-right:6px"></i>${esc(m.label)}</td><td class="n">${eur0.format(m.k.ca_ttc||0)}</td><td class="n">${n0.format(m.k.tickets||0)}</td><td class="n">${m.k.panier?eur0.format(m.k.panier):"–"}</td><td><div class="bar" style="width:${(m.k.ca_ttc||0)/maxM*100}%"></div></td></tr>`).join("")}</table>`;
+  }
+}
+
+// ------------------------------------------------------------------ STOCKS & ACHATS
+function status(v){ if(v==null) return `<span class="st">–</span>`; const c = v>=95?"good":v>=85?"warn":"crit", ic = v>=95?"✓":v>=85?"!":"✕"; return `<span class="st ${c}">${ic} ${n1.format(v)} %</span>`; }
+function renderStocks(){
+  const ph = S.photo, fo = S.four;
+  if(!ph){ document.getElementById("tilesStock").innerHTML = `<div class="card empty">Pas encore de photo de stock : elle est prise chaque nuit.</div>`; return; }
+  const stores = S.store==="ALL" ? Object.keys(ph.magasins) : [S.store];
+  let val=0, rup=0, dorm=0, qte=0, vendu=0, surs=0;
+  const secAgg = {};
+  stores.forEach(c => { const m = ph.magasins[c]; if(!m) return;
+    Object.entries(m.secteurs).forEach(([s,x]) => { val+=x.valeur||0; rup+=x.ruptures; dorm+=x.dormants; if(x.surstock) surs++;
+      const a = secAgg[s] = secAgg[s] || {}; a[c] = x; }); });
+  const f = (fo&&fo.fournisseurs)||[];
+  const retard = f.reduce((a,x)=>a+(x.valeur_retard||0),0);
+  const cmd = f.filter(x=>x.taux_service_30j!=null), ts = cmd.length ? cmd.reduce((a,x)=>a+x.taux_service_30j,0)/cmd.length : null;
+  const pc = f.filter(x=>x.ponctualite_30j!=null), pu = pc.length ? pc.reduce((a,x)=>a+x.ponctualite_30j,0)/pc.length : null;
+  const tiles = [
+    ["Valeur de stock (au coût)", compact(val), `<div class="delta">photo du ${frDate(ph.date)}</div>`, true],
+    ["Ruptures sur articles vendus", n0.format(rup), `<div class="delta">${stores.length>1?"tous magasins":esc(storeLabel(S.store))}</div>`],
+    ["Secteurs en surstock", n0.format(surs), `<div class="delta">couverture &gt; 90 jours</div>`],
+    ["Références dormantes", n0.format(dorm), `<div class="delta">aucune vente sur 30 j</div>`],
+    ["Commandes en retard", compact(retard), `<div class="delta">valeur restant à livrer</div>`],
+    ["Taux de service fournisseurs", pct(ts), `<div class="delta">ponctualité : ${pct(pu)}</div>`],
+  ];
+  document.getElementById("tilesStock").innerHTML = tiles.map(([l,v,d,h]) => `<div class="card tile ${h?'hero':''}"><div class="lbl">${l}</div><div class="val">${v}</div>${d}</div>`).join("");
+
+  // Évolution de la valeur de stock
+  const sh = S.stHist||[]; const dates = [...new Set(sh.map(r=>r.date))].sort().slice(-60);
+  const sv = (d,c) => sh.filter(r=>r.date===d && r.magasin===c).reduce((a,r)=>a+(r.valeur||0),0) || null;
+  draw("cStock", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c=>lineDs(storeLabel(c), dates.map(d=>sv(d,c)), STORE_COLORS[c]||PRIMARY))}});
+  legend("legStock", stores.length>1 ? stores.map(c=>[storeLabel(c), STORE_COLORS[c]]) : []);
+  dataTable("tStock", ["Date", ...stores.map(storeLabel)], dates.slice(-30).map(d=>[shortDate(d), ...stores.map(c=>{const v=sv(d,c);return v==null?"–":eur0.format(v);})]));
+
+  // Carte magasin × secteur (valeur : teinte séquentielle violette)
+  const secs = Object.keys(secAgg).sort(); let maxVal = 1;
+  secs.forEach(s => stores.forEach(c => { const x = secAgg[s][c]; if(x) maxVal = Math.max(maxVal, x.valeur||0); }));
+  const shade = v => { const t = Math.sqrt((v||0)/maxVal); return `rgba(72,40,130,${(0.06+0.5*t).toFixed(2)})`; };
+  document.getElementById("heat").innerHTML = `<table class="heat"><tr><th>Secteur</th>${stores.map(c=>`<th class="n">${esc(storeLabel(c))}</th>`).join("")}</tr>${secs.map(s=>`<tr><td>${esc(s)}</td>${stores.map(c=>{const x=secAgg[s][c]; if(!x) return `<td class="c">–</td>`; const dark=Math.sqrt((x.valeur||0)/maxVal)>0.6; return `<td class="c" style="background:${shade(x.valeur)};color:${dark?'#fff':'inherit'}" title="${esc(s)} · ${esc(storeLabel(c))} : ${eur0.format(x.valeur||0)}, couverture ${x.couverture_j==null?'–':n0.format(x.couverture_j)+' j'}">${compact(x.valeur||0)}<br><small>${x.couverture_j==null?'–':n0.format(x.couverture_j)+' j'}${x.surstock?' · <b>surstock</b>':''}</small></td>`;}).join("")}</tr>`).join("")}</table>`;
+
+  // Ruptures / dormants
+  const lst = (key) => stores.flatMap(c => ((ph.magasins[c]||{})[key]||[]).map(x=>({...x, mag:c})));
+  const rp = lst("ruptures").sort((a,b)=>b.vendu-a.vendu).slice(0,10);
+  document.getElementById("ruptures").innerHTML = rp.length ? `<table><tr><th>Produit</th><th>Magasin</th><th class="n">Vendu 30 j</th></tr>${rp.map(x=>`<tr><td><span class="st crit">✕ rupture</span> ${esc(x.nom)}</td><td>${esc(storeLabel(x.mag))}</td><td class="n">${n0.format(x.vendu)}</td></tr>`).join("")}</table>` : `<div class="empty">Aucune rupture 🎉</div>`;
+  const dm = lst("dormants").sort((a,b)=>b.valeur-a.valeur).slice(0,10);
+  document.getElementById("dormants").innerHTML = dm.length ? `<table><tr><th>Produit</th><th>Magasin</th><th class="n">Qté</th><th class="n">Valeur</th></tr>${dm.map(x=>`<tr><td>${esc(x.nom)}</td><td>${esc(storeLabel(x.mag))}</td><td class="n">${n0.format(x.qte)}</td><td class="n">${eur0.format(x.valeur)}</td></tr>`).join("")}</table>` : `<div class="empty">Aucun stock dormant</div>`;
+
+  // Fournisseurs
+  document.getElementById("fournisseurs").innerHTML = f.length ? `<table><tr><th>Fournisseur</th><th>Secteur</th><th>Taux de service</th><th>Ponctualité</th><th class="n">Délai moyen</th><th class="n">Lignes en retard</th><th class="n">Valeur en retard</th><th class="n">Reste à livrer</th></tr>${f.map(x=>`<tr><td>${esc(x.fournisseur)}</td><td>${esc(x.secteur||"–")}</td><td>${status(x.taux_service_30j)}</td><td>${status(x.ponctualite_30j)}</td><td class="n">${x.delai_moyen_j==null?"–":n1.format(x.delai_moyen_j)+" j"}</td><td class="n">${n0.format(x.lignes_retard)}</td><td class="n">${eur0.format(x.valeur_retard||0)}</td><td class="n">${eur0.format(x.valeur_restante||0)}</td></tr>`).join("")}</table>` : `<div class="empty">Pas encore de données achats.</div>`;
+
+  const rt = ((fo&&fo.retards)||[]).slice(0,10);
+  document.getElementById("retards").innerHTML = rt.length ? `<table><tr><th>Commande</th><th>Fournisseur</th><th>Produit</th><th class="n">Reste</th><th class="n">Retard</th></tr>${rt.map(x=>`<tr><td>${esc(x.doc)}</td><td>${esc(x.fournisseur)}</td><td>${esc(x.produit)}</td><td class="n">${n0.format(x.qte_restante)}</td><td class="n"><span class="st ${x.jours_retard>14?'crit':'warn'}">${x.jours_retard>14?'✕':'!'} ${x.jours_retard} j</span></td></tr>`).join("")}</table>` : `<div class="empty">Aucune commande en retard</div>`;
+
+  // Réceptions
+  const rec = S.rec||[]; const end = (fo&&fo.date) || ph.date; const rd = []; for(let i=29;i>=0;i--) rd.push(addDays(end,-i));
+  const rv = rd.map(d => rec.filter(r=>r.date===d).reduce((a,r)=>a+(r.valeur||0),0));
+  draw("cRec", {type:"bar", data:{labels:rd.map(shortDate), datasets:[barDs("Valeur reçue", rv, PRIMARY)]}});
+  dataTable("tRec", ["Date","Valeur reçue"], rd.map((d,i)=>[shortDate(d), eur0.format(rv[i])]));
+}
+
+// ------------------------------------------------------------------ CHARGEMENT
+async function loadDay(){
+  [S.jour, S.jourS1] = await Promise.all([j(`ventes/jour/${S.date}.json`), j(`ventes/jour/${addDays(S.date,-7)}.json`)]);
+}
+async function loadAll(first){
+  const [meta, jours, hist, photo, stHist, four, rec] = await Promise.all([j("meta.json"), j("ventes/jours.json"), j("ventes/historique.json"), j("stocks/photo.json"), j("stocks/historique.json"), j("achats/fournisseurs.json"), j("achats/receptions.json")]);
+  if(!meta || !jours || !jours.length){ document.querySelector("main").innerHTML = `<div class="card empty">Aucune donnée pour l'instant : lancez la collecte (onglet Actions du dépôt GitHub).</div>`; return; }
+  const wasLatest = !S.date || S.auto || S.date === (S.jours||[])[S.jours.length-1];
+  S.auto = false;
+  Object.assign(S, {meta, jours, hist, photo, stHist, four, rec});
+  if(first){
+    document.getElementById("fStore").innerHTML = `<option value="ALL">Tous les magasins</option>` + meta.magasins.map(m=>`<option value="${esc(m.code)}">${esc(m.label)}</option>`).join("");
+  }
+  if(wasLatest) S.date = jours[jours.length-1];
+  document.getElementById("fDate").innerHTML = [...jours].reverse().slice(0,90).map(d=>`<option value="${d}" ${d===S.date?"selected":""}>${frDate(d)}</option>`).join("");
+  const sim = meta.source === "simulation";
+  const b = document.getElementById("srcBadge"); b.textContent = sim ? "Event · données simulées" : "Event · données réelles"; b.classList.toggle("sim", sim);
+  document.getElementById("maj").textContent = "Mis à jour le " + new Date(meta.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"});
+  await loadDay();
+  // Avant l'ouverture : pas encore de vente aujourd'hui → on affiche la veille
+  const note = document.getElementById("note"); note.textContent = "";
+  if(wasLatest && S.jour && !S.jour.total.kpi.tickets && jours.length > 1){
+    S.date = jours[jours.length-2]; S.auto = true; await loadDay();
+    document.getElementById("fDate").value = S.date;
+    note.textContent = "Pas encore de vente aujourd'hui : affichage de la dernière journée.";
+  }
+  render();
+}
+function render(){ S.tab==="ventes" ? renderVentes() : renderStocks(); }
+
+document.querySelectorAll("nav button").forEach(btn => btn.onclick = () => {
+  S.tab = btn.dataset.tab;
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b===btn));
+  document.getElementById("tab-ventes").classList.toggle("hidden", S.tab!=="ventes");
+  document.getElementById("tab-stocks").classList.toggle("hidden", S.tab!=="stocks");
+  document.getElementById("lblDate").classList.toggle("hidden", S.tab!=="ventes");
+  render();
+});
+document.getElementById("fStore").onchange = e => { S.store = e.target.value; render(); };
+document.getElementById("fDate").onchange = async e => { S.date = e.target.value; S.auto = false; document.getElementById("note").textContent = ""; await loadDay(); render(); };
+loadAll(true);
+setInterval(() => loadAll(false), 5*60*1000); // rafraîchissement auto (écran de salon)
+</script>
+</body>
+</html>
