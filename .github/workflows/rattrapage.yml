@@ -1,0 +1,46 @@
+name: Rattrapage de l'historique (manuel)
+on:
+  workflow_dispatch:
+    inputs:
+      du:
+        description: "Date de début (AAAA-MM-JJ)"
+        required: true
+      au:
+        description: "Date de fin (AAAA-MM-JJ)"
+        required: true
+      purger:
+        description: "Effacer les données existantes avant (pour remplacer la simulation)"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: collecte
+  cancel-in-progress: false
+jobs:
+  collecte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OB_URL: ${{ secrets.OB_URL }}
+      OB_USER: ${{ secrets.OB_USER }}
+      OB_PASSWORD: ${{ secrets.OB_PASSWORD }}
+      OB_MOCK: ${{ vars.OB_MOCK || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Purger les données existantes
+        if: ${{ inputs.purger }}
+        run: rm -rf docs/data/*
+      - name: Recharger l'historique
+        run: python -m collector.run rattrapage --du "${{ inputs.du }}" --au "${{ inputs.au }}"
+      - name: Enregistrer les données
+        run: |
+          git config user.name "reporting-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs/data
+          if git diff --cached --quiet; then echo "Aucune nouvelle donnée"; exit 0; fi
+          git commit -m "Données : rattrapage $(TZ=Europe/Paris date +%F\ %H:%M)"
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
