@@ -61,6 +61,12 @@ def main():
                 if d.weekday() == 0 or d == d2:
                     achats.collect(client, rf, d, now_iso)
             print("Simulation : photos de stock et historique achats générés")
+        else:
+            # Données réelles : pas d'historique de stock possible, mais on reprend la photo du jour
+            # et les achats tout de suite (sinon, après une purge, l'onglet reste vide jusqu'à la nuit).
+            stocks.collect(client, rf, today(), now_iso)
+            achats.collect(client, rf, today(), now_iso)
+            print("Photo de stock et achats du jour enregistrés")
 
     write_meta(client.source)
     print(f"Terminé en {time.time() - t0:.1f} s ({client.calls} appels API)")
