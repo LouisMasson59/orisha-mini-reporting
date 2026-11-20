@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
+from . import orgs
 from . import refs as R
 from .store import CONFIG, num, r2, save_json, upsert
 from .ventes import is_excluded, is_purchase
@@ -19,7 +20,7 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
     couts = refs.get("couts", {})
     d0 = day - timedelta(days=hist_days)
     pos = []
-    for org in CONFIG["purchase_orgs"]:
+    for org in orgs.purchase_orgs(client):
         pos += client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d0.isoformat(), "dateTo": day.isoformat()})
     pos = [o for o in pos if is_purchase(o) and not is_excluded(o)]
 

@@ -9,7 +9,15 @@ def build(client) -> dict:
     for pp in client.get("ProductPrice/byPriceList", {"priceList": CONFIG["sales_price_list"]}):
         if num(pp.get("cost")) > 0:
             couts[pp.get("product")] = num(pp.get("cost"))
-    refs = {"maj": now_local().isoformat(timespec="seconds"), "categories": cats, "produits": prods, "couts": couts}
+    source = "coût de la liste de vente"
+    if not couts and CONFIG.get("cost_price_list"):
+        # repli : prix d'achat HT de la liste d'achat comme coût
+        for pp in client.get("ProductPrice/byPriceList", {"priceList": CONFIG["cost_price_list"]}):
+            v = num(pp.get("unitPrice")) or num(pp.get("listPrice"))
+            if v > 0:
+                couts[pp.get("product")] = v
+        source = "prix de la liste d'achat"
+    refs = {"maj": now_local().isoformat(timespec="seconds"), "categories": cats, "produits": prods, "couts": couts, "source_couts": source}
     save_json("ref/refs.json", refs)
     return refs
 

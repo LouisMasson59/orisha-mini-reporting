@@ -54,24 +54,34 @@ def run(client) -> str:
             types = Counter(str(o.get("documentType$_identifier") or o.get("documentType")) for o in orders)
             out += ["", "Organisations rencontrées : " + ", ".join(f"`{k}` ({v})" for k, v in orgs_seen.most_common()),
                     "", "Types de document : " + ", ".join(f"`{k}` ({v})" for k, v in types.most_common())]
-            o = orders[0]
+            from .ventes import is_purchase
+            sales = [x for x in orders if not is_purchase(x)]
+            o = sales[0] if sales else orders[0]
             l0 = (o.get("lines") or [{}])[0]
-            out += ["", "Exemple de commande :", "```",
+            out += ["", "Exemple de commande de vente :", "```",
                     f"documentNo={o.get('documentNo')}  orderDate={o.get('orderDate')}  creationDate={o.get('creationDate')}",
                     f"organization={o.get('organization')}  organization_info={o.get('organization_info')}",
                     f"isSale={o.get('isSale')}  isReturn={o.get('isReturn')}  salesRepresentative={o.get('salesRepresentative')}",
                     f"grossAmount={o.get('grossAmount')}  netAmount={o.get('netAmount')}  lignes={len(o.get('lines') or [])}  paiements={len(o.get('payments') or [])}",
-                    f"ligne 1 : product={l0.get('product')}  qty={l0.get('orderedQuantity')}  grossAmount={l0.get('grossAmount')}  purchasePrice={l0.get('purchasePrice')}  vendeur={l0.get('salesRepresentative')}",
+                    f"ligne 1 : product={l0.get('product')}  qty={l0.get('orderedQuantity')}  grossAmount={l0.get('grossAmount')}  netAmount={l0.get('netAmount')}  grossListPrice={l0.get('grossListPrice')}  purchasePrice={l0.get('purchasePrice')}  vendeur={l0.get('salesRepresentative')}",
                     "```"]
+            pos = [x for x in orders if is_purchase(x)]
+            if pos:
+                pl = (pos[0].get("lines") or [{}])[0]
+                out += ["", "Exemple de ligne de commande d'achat :", "```",
+                        f"documentNo={pos[0].get('documentNo')}  businessPartner={pos[0].get('businessPartner')}  organization={_org_label(pos[0])}",
+                        f"orderedQuantity={pl.get('orderedQuantity')}  deliveredQuantity={pl.get('deliveredQuantity')}  shippedQuantity={pl.get('shippedQuantity')}  deliveryDate={pl.get('deliveryDate')}  netUnitPrice={pl.get('netUnitPrice')}",
+                        "```"]
     out += [""]
 
     # 3. Commandes par magasin (filtre utilisé par le reporting)
     out += ["## 3. Ventes des 30 derniers jours par magasin (filtre `organization`)", "", "| Magasin | Valeur testée | Commandes | Résultat |", "|---|---|---|---|"]
     d1, d2 = (t - timedelta(days=30)).isoformat(), t.isoformat()
-    org_by_code = {str(o.get("searchKey")): o.get("name") for o in orgs}
+    from . import orgs as ORG
+    resolved = ORG.resolve(client)
     for st in CONFIG["stores"]:
-        candidates = [st["api_name"]]
-        for alt in (org_by_code.get(st["code"]), st["code"], st["label"]):
+        candidates = [resolved.get(st["code"]) or st["api_name"]]
+        for alt in (st["api_name"], st["code"], st["label"]):
             if alt and alt not in candidates and not str(alt).startswith("A_RENSEIGNER"):
                 candidates.append(alt)
         for c in candidates:
@@ -92,14 +102,24 @@ def run(client) -> str:
     # 5. Référentiel
     out += ["## 5. Référentiel", ""]
     for label, path, params in (("Produits", "Product", {}), ("Catégories", "ProductCategory", {}),
-                                (f"Prix « {CONFIG['sales_price_list']} »", "ProductPrice/byPriceList", {"priceList": CONFIG["sales_price_list"]})):
+                                (f"Prix « {CONFIG['sales_price_list']} »", "ProductPrice/byPriceList", {"priceList": CONFIG["sales_price_list"]}),
+                                (f"Prix « {CONFIG.get('cost_price_list')} » (coût de repli)", "ProductPrice/byPriceList", {"priceList": CONFIG.get("cost_price_list")})):
         res, err = _try(lambda path=path, params=params: client.get(path, params))
         extra = ""
         if res and path == "ProductPrice/byPriceList":
-            extra = f" — dont {sum(1 for r in res if num(r.get('cost')) > 0)} avec un coût"
+            extra = f" — dont {sum(1 for r in res if num(r.get('cost')) > 0)} avec un coût, {sum(1 for r in res if num(r.get('unitPrice')) > 0)} avec un prix"
         if res and path == "ProductCategory":
             extra = f" — dont {sum(1 for r in res if not r.get('parentCategory'))} de niveau racine (= secteurs)"
         out += [f"- {ok(res)} {label} : {err or len(res)}{extra}"]
+    body, err = _try(lambda: client.get_page("ProductPrice", {}, 100))
+    pl = (body or {}).get("data") or []
+    if isinstance(pl, dict):
+        pl = pl.get("records") or []
+    if pl:
+        names = Counter(str(r.get("priceList$_identifier") or r.get("priceList")) for r in pl)
+        out += ["- Listes de prix rencontrées : " + ", ".join(f"`{k}`" for k in names) + "  ← à reporter dans `sales_price_list` / `cost_price_list` si différent"]
+    elif err:
+        out += [f"- Listes de prix : `{err}`"]
     out += [""]
 
     # 6. Achats
@@ -109,10 +129,11 @@ def run(client) -> str:
     if res:
         g = res[0]
         out += [f"  - exemple : movementDate={g.get('movementDate')} businessPartner={g.get('businessPartner')} orderDocumentNo={g.get('orderDocumentNo')}"]
-    for org in CONFIG["purchase_orgs"]:
+    from .ventes import is_purchase as _isp
+    for org in ORG.purchase_orgs(client):
         res, err = _try(lambda org=org: client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": (t - timedelta(days=180)).isoformat(), "dateTo": d2}))
-        pur = [o for o in res or [] if any(k in str(o.get("documentType") or "").lower() for k in CONFIG["purchase_document_keywords"])]
-        out += [f"- {ok(pur)} Commandes d'achat via l'organisation `{org}` (180 j) : {err or f'{len(pur)} sur {len(res)} commandes'}"]
+        pur = [o for o in res or [] if _isp(o)]
+        out += [f"- {ok(pur)} Commandes d'achat via `{org}` (180 j) : {err or f'{len(pur)} sur {len(res)} commandes'}"]
     out += ["", f"_{client.calls} appels API_"]
     return "\n".join(out)
 

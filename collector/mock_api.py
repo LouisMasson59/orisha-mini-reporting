@@ -87,7 +87,7 @@ class MockAPI:
         if path == "ProductPrice/byPriceList":
             return [{"product": x["searchKey"], "listPrice": x["price"], "unitPrice": x["price"], "cost": x["cost"], "priceList": p.get("priceList")} for x in self.products]
         if path == "Organization":
-            return [{"id": c, "name": s["api_name"], "searchKey": c} for c, s in self.stores.items()]
+            return [{"id": c, "name": s["api_name"], "searchKey": s.get("search_key", c)} for c, s in self.stores.items()]
         if path == "Order":
             return self._sales("0001", today() - timedelta(days=1)) + [o for o in self._pos()][:5]
         if path == "Order/byOrgOrderDateRange":

@@ -2,12 +2,13 @@
 from collections import defaultdict
 from datetime import date, timedelta
 
+from . import orgs
 from . import refs as R
 from .store import CONFIG, load_json, num, r2, save_json, upsert
 
 
 def is_purchase(o: dict) -> bool:
-    doc = str(o.get("documentType") or "").lower()
+    doc = (str(o.get("documentType") or "") + " " + str(o.get("documentType$_identifier") or "")).lower()
     return any(k in doc for k in CONFIG["purchase_document_keywords"])
 
 
@@ -16,11 +17,12 @@ def is_excluded(o: dict) -> bool:
 
 
 def fetch(client, store: dict, d1: date, d2: date) -> list:
+    org = orgs.resolve(client).get(store["code"]) or store["api_name"]
     """Commandes de vente d'un magasin entre deux dates (par tranches de 31 jours)."""
     out, d = [], d1
     while d <= d2:
         e = min(d2, d + timedelta(days=30))
-        out += client.get("Order/byOrgOrderDateRange", {"organization": store["api_name"], "dateFrom": d.isoformat(), "dateTo": e.isoformat()})
+        out += client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d.isoformat(), "dateTo": e.isoformat()})
         d = e + timedelta(days=1)
     return [o for o in out if not is_purchase(o) and not is_excluded(o)]
 
@@ -128,8 +130,6 @@ def collect(client, refs: dict, d1: date, d2: date, now_iso: str) -> int:
     by_day = {d1 + timedelta(days=i): {} for i in range((d2 - d1).days + 1)}
     n = 0
     for st in CONFIG["stores"]:
-        if st["api_name"].startswith("A_RENSEIGNER") and not client.mock:
-            continue
         for o in fetch(client, st, d1, d2):
             try:
                 od = date.fromisoformat(str(o.get("businessDate") or o.get("orderDate"))[:10])
