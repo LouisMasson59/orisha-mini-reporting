@@ -24,6 +24,17 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
         pos += client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d0.isoformat(), "dateTo": day.isoformat()})
     pos = [o for o in pos if is_purchase(o) and not is_excluded(o)]
 
+    # Réceptions sur toute la fenêtre : servent aussi à calculer les quantités reçues par ligne
+    # (sur Event, deliveredQuantity peut rester à 0 même après réception).
+    receipts = [g for g in client.get("ShipmentInOut/goodsReceiptByMovementDateRange", {"dateFrom": d0.isoformat(), "dateTo": day.isoformat()})
+                if g.get("isSale") is not True and g.get("isReturn") is not True]
+    recv_map = defaultdict(float)
+    for g in receipts:
+        for l in g.get("lines") or []:
+            sk = l.get("product") or (l.get("product_info") or {}).get("searchKey")
+            recv_map[(g.get("orderDocumentNo"), sk)] += num(l.get("movementQuantity"))
+    lead = timedelta(days=int(CONFIG.get("default_lead_days", 7)))
+
     sup = defaultdict(lambda: defaultdict(float))
     sectors = defaultdict(Counter)
     due_by_doc, order_date_by_doc = {}, {}
@@ -31,13 +42,14 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
     for o in pos:
         bp = o.get("businessPartner") or "Fournisseur inconnu"
         od = _d(o.get("orderDate"))
+        head_due = _d(o.get("scheduledDeliveryDate") or o.get("deliveryDate") or o.get("datePromised"))
         for l in o.get("lines") or []:
             pi = l.get("product_info") or {}
             sk = l.get("product") or pi.get("searchKey")
             ordered = num(l.get("orderedQuantity"))
-            recv = num(l.get("deliveredQuantity")) or num(l.get("shippedQuantity"))
+            recv = max(num(l.get("deliveredQuantity")), num(l.get("shippedQuantity")), recv_map.get((o.get("documentNo"), sk), 0.0))
             price = num(l.get("netUnitPrice")) or couts.get(sk, 0.0)
-            due = _d(l.get("deliveryDate")) or od
+            due = _d(l.get("deliveryDate")) or head_due or (od + lead if od else None)
             sectors[bp][R.sector(refs, sk)] += 1
             if due:
                 doc = o.get("documentNo")
@@ -58,7 +70,6 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
                 s["cmd_30"] += ordered
                 s["recu_30"] += min(recv, ordered)
 
-    receipts = client.get("ShipmentInOut/goodsReceiptByMovementDateRange", {"dateFrom": (day - timedelta(days=30)).isoformat(), "dateTo": day.isoformat()})
     rec_rows = defaultdict(lambda: defaultdict(float))
     for g in receipts:
         if g.get("isSale") is True or g.get("isReturn") is True:
@@ -67,19 +78,21 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
         md = _d(g.get("movementDate"))
         qty = sum(num(l.get("movementQuantity")) for l in g.get("lines") or [])
         val = sum(num(l.get("movementQuantity")) * couts.get(l.get("product") or (l.get("product_info") or {}).get("searchKey"), 0.0) for l in g.get("lines") or [])
-        s = sup[bp]
-        s["receptions_30"] += 1
-        s["valeur_recue_30"] += val
-        doc = g.get("orderDocumentNo")
-        if md and doc in due_by_doc:
-            s["rec_rapprochees"] += 1
-            s["rec_a_l_heure"] += 1 if md <= due_by_doc[doc] else 0
-            if order_date_by_doc.get(doc):
-                s["delai_total"] += (md - order_date_by_doc[doc]).days
         if md:
             r = rec_rows[(md.isoformat(), bp)]
             r["qte"] += qty
             r["valeur"] += val
+        if not md or md < day - timedelta(days=30):
+            continue  # les indicateurs fournisseurs portent sur les 30 derniers jours
+        s = sup[bp]
+        s["receptions_30"] += 1
+        s["valeur_recue_30"] += val
+        doc = g.get("orderDocumentNo")
+        if doc in due_by_doc:
+            s["rec_rapprochees"] += 1
+            s["rec_a_l_heure"] += 1 if md <= due_by_doc[doc] else 0
+            if order_date_by_doc.get(doc):
+                s["delai_total"] += (md - order_date_by_doc[doc]).days
 
     fournisseurs = []
     for bp, s in sup.items():

@@ -1,8 +1,9 @@
 {
   "timezone": "Europe/Paris",
   "page_size": 100,
-  "sales_price_list": "Sales Price List",
-  "cost_price_list": "Purchase Price List",
+  "sales_price_list": "Sales Price List EUR",
+  "cost_price_list": "Purchase Price List EUR",
+  "default_lead_days": 7,
   "stores": [
     { "code": "0001", "search_key": "0001", "api_name": "Villeneuve d'ascq - rue Papin", "label": "Villeneuve d'Ascq", "warehouse": "0001", "type": "Magasin" },
     { "code": "0002", "search_key": "0002", "api_name": "Passy - Rue des Pres Moulin", "label": "Paris Passy", "warehouse": "0002", "type": "Magasin" },
