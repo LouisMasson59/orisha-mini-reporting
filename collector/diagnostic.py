@@ -134,11 +134,69 @@ def run(client) -> str:
         res, err = _try(lambda org=org: client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": (t - timedelta(days=180)).isoformat(), "dateTo": d2}))
         pur = [o for o in res or [] if _isp(o)]
         out += [f"- {ok(pur)} Commandes d'achat via `{org}` (180 j) : {err or f'{len(pur)} sur {len(res)} commandes'}"]
+    # 7. Contrôle du jour (à rapprocher du back office)
+    from . import refs as RF
+    from . import ventes as V
+    rf, err = _try(lambda: RF.build(client))
+    out += ["", "## 7. Contrôle du jour (à comparer avec le back office)", ""]
+    if rf:
+        out += [f"Coûts trouvés pour {len(rf['couts'])} produits ({rf.get('source_couts')}).", "",
+                "| Magasin | Tickets | Retours (docs) | CA TTC net | dont retours TTC |", "|---|---|---|---|---|"]
+        for st in CONFIG["stores"]:
+            orders, err = _try(lambda st=st: [o for o in V.fetch(client, st, t, t) if V.sale_day(o) == t])
+            if err:
+                out += [f"| {st['code']} | {err} | | | |"]
+                continue
+            k = V.build_block(orders, rf, t)["kpi"]
+            out += [f"| {st['code']} {st['label']} | {k['tickets']} | {k['retours_tickets']} | {k['ca_ttc']} € | {k['retours_ttc']} € |"]
+        out += ["", "| Entrepôt | Références en stock | dont sans coût | Valeur au coût |", "|---|---|---|---|"]
+        for st in CONFIG["stores"]:
+            res, err = _try(lambda st=st: client.get("Stock/byWarehouse", {"warehouse": st["warehouse"]}))
+            if err:
+                out += [f"| {st['warehouse']} | {err} | | |"]
+                continue
+            q = Counter()
+            for r in res:
+                q[RF.sk_of(rf, r)] += num(r.get("quantityOnHand"))
+            pos_q = {k: v for k, v in q.items() if v > 0}
+            out += [f"| {st['warehouse']} | {len(pos_q)} | {sum(1 for k in pos_q if k not in rf['couts'])} | {round(sum(v * rf['couts'].get(k, 0) for k, v in pos_q.items()), 2)} € |"]
+    else:
+        out += [f"❌ {err}"]
     out += ["", f"_{client.calls} appels API_"]
     return "\n".join(out)
 
 
+def dump_samples(client) -> None:
+    """Échantillons bruts de chaque API (dossier diagnostic/, téléchargeable depuis l'action)."""
+    import json
+    from pathlib import Path
+    from . import orgs as ORG
+    from .ventes import is_purchase, is_return
+    d = Path("diagnostic")
+    d.mkdir(exist_ok=True)
+    t = today()
+    def save(name, data):
+        (d / f"{name}.json").write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    org = ORG.resolve(client).get(CONFIG["stores"][0]["code"])
+    orders, _ = _try(lambda: client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": (t - timedelta(days=60)).isoformat(), "dateTo": (t + timedelta(days=1)).isoformat()}))
+    orders = orders or []
+    save("commandes_vente", [o for o in orders if not is_purchase(o) and not is_return(o)][-3:])
+    save("commandes_retour", [o for o in orders if is_return(o)][:3])
+    save("commandes_achat", [o for o in orders if is_purchase(o)][:3])
+    for name, path, params in (("stock", "Stock/byWarehouse", {"warehouse": CONFIG["stores"][0]["warehouse"]}),
+                               ("receptions", "ShipmentInOut/goodsReceiptByMovementDateRange", {"dateFrom": (t - timedelta(days=60)).isoformat(), "dateTo": t.isoformat()}),
+                               ("prix_vente", "ProductPrice/byPriceList", {"priceList": CONFIG["sales_price_list"]}),
+                               ("prix_achat", "ProductPrice/byPriceList", {"priceList": CONFIG.get("cost_price_list")}),
+                               ("produits", "Product", {}), ("categories", "ProductCategory", {})):
+        body, err = _try(lambda path=path, params=params: client.get_page(path, params, 3))
+        save(name, body if body else {"erreur": err})
+
+
 def main(client):
+    try:
+        dump_samples(client)
+    except Exception as e:  # noqa: BLE001
+        print("Échantillons non enregistrés :", e)
     report = run(client)
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")

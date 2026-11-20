@@ -36,17 +36,20 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
         names = {}
         for rec in client.get("Stock/byWarehouse", params):
             pi = rec.get("product_info") or {}
-            sk = pi.get("searchKey") or rec.get("product")
+            sk = R.sk_of(refs, rec)
             stock[sk] += num(rec.get("quantityOnHand"))
             names[sk] = pi.get("name") or rec.get("product")
         sold = _sales_window(st["code"], day, win)
         sect = defaultdict(lambda: {"qte": 0.0, "valeur": 0.0, "refs": 0, "ruptures": 0, "dormants": 0, "vendu": 0.0})
         ruptures, dormants = [], []
+        sans_cout = 0
         for sk in set(stock) | set(sold):
             q, s = stock.get(sk, 0.0), sold.get(sk, 0.0)
             sec = R.sector(refs, sk)
             nom = R.product_name(refs, sk, names.get(sk))
             val = q * couts.get(sk, 0.0)
+            if q > 0 and sk not in couts:
+                sans_cout += 1
             a = sect[sec]
             a["qte"] += q
             a["valeur"] += val
@@ -67,6 +70,7 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             rows.append({"date": day.isoformat(), "magasin": st["code"], "secteur": sec, **{k: detail[sec][k] for k in ("qte", "valeur", "ruptures", "dormants", "couverture_j")}})
         photo["magasins"][st["code"]] = {
             "secteurs": detail,
+            "refs_sans_cout": sans_cout,
             "ruptures": sorted(ruptures, key=lambda x: -x["vendu"])[:15],
             "dormants": sorted(dormants, key=lambda x: -x["valeur"])[:15],
         }

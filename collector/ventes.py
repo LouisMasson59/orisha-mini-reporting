@@ -13,7 +13,15 @@ def is_purchase(o: dict) -> bool:
 
 
 def is_excluded(o: dict) -> bool:
+    if str(o.get("docStatus") or "").upper() in ("DR", "VO", "CA", "NA"):
+        return True  # brouillon, annulé, non accepté
     return any(o.get(f) is True for f in CONFIG["excluded_order_flags"])
+
+
+def is_return(o: dict) -> bool:
+    """Retour client : flag isReturn, ou type de document de retour (ex. « RFC Order » = Return From Customer)."""
+    doc = (str(o.get("documentType") or "") + " " + str(o.get("documentType$_identifier") or "")).lower()
+    return o.get("isReturn") is True or any(k in doc for k in ("rfc", "return", "retour", "devol"))
 
 
 def fetch(client, store: dict, d1: date, d2: date) -> list:
@@ -57,8 +65,11 @@ def build_block(orders: list, refs: dict, day: date) -> dict:
     pay = defaultdict(float)
     sect = defaultdict(lambda: {"qte": 0.0, "ca_ttc": 0.0, "ca_ht": 0.0, "marge": 0.0})
     for o in orders:
-        ret = o.get("isReturn") is True
-        if not ret:
+        ret = is_return(o)
+        neg = (lambda v: -abs(v)) if ret else (lambda v: v)  # noqa: E731  un document de retour compte toujours en négatif
+        if ret:
+            k["retours_tickets"] += 1
+        else:
             k["tickets"] += 1
         head_vendor = o.get("salesRepresentative") or "Non renseigné"
         if not ret:
@@ -70,8 +81,12 @@ def build_block(orders: list, refs: dict, day: date) -> dict:
             if l.get("isDeleted"):
                 continue
             pi = l.get("product_info") or {}
-            sk = l.get("product") or pi.get("searchKey")
-            qty, ttc, ht = num(l.get("orderedQuantity")), num(l.get("grossAmount")), num(l.get("netAmount"))
+            sk = R.sk_of(refs, l)
+            qty, ttc, ht = neg(num(l.get("orderedQuantity"))), neg(num(l.get("grossAmount"))), neg(num(l.get("netAmount")))
+            if ttc < 0:
+                k["retours_ttc"] += -ttc  # retours : documents de retour + lignes négatives des tickets mixtes
+            else:
+                k["ventes_brutes_ttc"] += ttc
             cost = num(l.get("purchasePrice")) or refs.get("couts", {}).get(sk, 0.0)
             marge = ht - qty * cost
             if num(l.get("grossListPrice")):
@@ -99,12 +114,14 @@ def build_block(orders: list, refs: dict, day: date) -> dict:
             s["ca_ht"] += ht
             s["marge"] += marge
         for pm in o.get("payments") or []:
-            pay[pm.get("name") or pm.get("paymentType") or "Autre"] += num(pm.get("amount"))
+            pay[pm.get("name") or pm.get("paymentType") or "Autre"] += neg(num(pm.get("amount")))
     t = k["tickets"]
     kpi = {
         "ca_ttc": r2(k["ca_ttc"]), "ca_ht": r2(k["ca_ht"]), "tickets": int(t), "articles": r2(k["articles"]),
         "panier": r2(k["ca_ttc"] / t) if t else None, "upt": r2(k["articles"] / t) if t else None,
         "marge": r2(k["marge"]), "taux_marge": r2(k["marge"] / k["ca_ht"] * 100) if k["ca_ht"] else None,
+        "retours_ttc": r2(k["retours_ttc"]), "retours_tickets": int(k["retours_tickets"]),
+        "taux_retour": r2(k["retours_ttc"] / k["ventes_brutes_ttc"] * 100) if k["ventes_brutes_ttc"] else None,
         "remise": r2(k["remise"]), "taux_remise": r2(k["remise"] / (k["ca_ttc"] + k["remise"]) * 100) if k["ca_ttc"] + k["remise"] else None,
     }
     return {

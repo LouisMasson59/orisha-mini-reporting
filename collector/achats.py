@@ -23,16 +23,22 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
     for org in orgs.purchase_orgs(client):
         pos += client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d0.isoformat(), "dateTo": day.isoformat()})
     pos = [o for o in pos if is_purchase(o) and not is_excluded(o)]
+    pos = list({(o.get("id") or o.get("documentNo")): o for o in pos}.values())
 
     # Réceptions sur toute la fenêtre : servent aussi à calculer les quantités reçues par ligne
     # (sur Event, deliveredQuantity peut rester à 0 même après réception).
     receipts = [g for g in client.get("ShipmentInOut/goodsReceiptByMovementDateRange", {"dateFrom": d0.isoformat(), "dateTo": day.isoformat()})
-                if g.get("isSale") is not True and g.get("isReturn") is not True]
-    recv_map = defaultdict(float)
+                if g.get("isSale") is not True and g.get("isReturn") is not True
+                and str(g.get("documentStatus") or "CO").upper() in ("CO", "CL")]  # réceptions terminées uniquement
+    recv_map, recv_by_line = defaultdict(float), defaultdict(float)
     for g in receipts:
         for l in g.get("lines") or []:
-            sk = l.get("product") or (l.get("product_info") or {}).get("searchKey")
-            recv_map[(g.get("orderDocumentNo"), sk)] += num(l.get("movementQuantity"))
+            q = num(l.get("movementQuantity"))
+            ol = l.get("orderLine")
+            ol_id = ol.get("id") if isinstance(ol, dict) else (ol if isinstance(ol, str) else None)
+            if ol_id:
+                recv_by_line[ol_id] += q
+            recv_map[(g.get("orderDocumentNo"), R.sk_of(refs, l))] += q
     lead = timedelta(days=int(CONFIG.get("default_lead_days", 7)))
 
     sup = defaultdict(lambda: defaultdict(float))
@@ -45,9 +51,10 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
         head_due = _d(o.get("scheduledDeliveryDate") or o.get("deliveryDate") or o.get("datePromised"))
         for l in o.get("lines") or []:
             pi = l.get("product_info") or {}
-            sk = l.get("product") or pi.get("searchKey")
+            sk = R.sk_of(refs, l)
             ordered = num(l.get("orderedQuantity"))
-            recv = max(num(l.get("deliveredQuantity")), num(l.get("shippedQuantity")), recv_map.get((o.get("documentNo"), sk), 0.0))
+            from_receipts = recv_by_line.get(l.get("id")) if l.get("id") in recv_by_line else recv_map.get((o.get("documentNo"), sk), 0.0)
+            recv = max(num(l.get("deliveredQuantity")), num(l.get("shippedQuantity")), from_receipts)
             price = num(l.get("netUnitPrice")) or couts.get(sk, 0.0)
             due = _d(l.get("deliveryDate")) or head_due or (od + lead if od else None)
             sectors[bp][R.sector(refs, sk)] += 1
@@ -72,12 +79,10 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
 
     rec_rows = defaultdict(lambda: defaultdict(float))
     for g in receipts:
-        if g.get("isSale") is True or g.get("isReturn") is True:
-            continue
         bp = g.get("businessPartner") or "Fournisseur inconnu"
         md = _d(g.get("movementDate"))
         qty = sum(num(l.get("movementQuantity")) for l in g.get("lines") or [])
-        val = sum(num(l.get("movementQuantity")) * couts.get(l.get("product") or (l.get("product_info") or {}).get("searchKey"), 0.0) for l in g.get("lines") or [])
+        val = sum(num(l.get("movementQuantity")) * couts.get(R.sk_of(refs, l), 0.0) for l in g.get("lines") or [])
         if md:
             r = rec_rows[(md.isoformat(), bp)]
             r["qte"] += qty

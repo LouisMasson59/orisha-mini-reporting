@@ -13,7 +13,7 @@
   "purchase_orgs": ["@magasins", "France"],
   "purchase_history_days": 180,
   "excluded_order_flags": ["isCancelled", "isVoid", "isDeleted", "isDraftOrder", "isLayaway"],
-  "purchase_document_keywords": ["purchase", "achat", "compra"],
+  "purchase_document_keywords": ["purchase", "achat", "compra", "vendor", "rtv"],
   "overstock_days": 90,
   "sales_window_days": 30
 }
