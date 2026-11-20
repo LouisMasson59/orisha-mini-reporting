@@ -93,11 +93,20 @@ def run(client) -> str:
     out += [""]
 
     # 4. Stock
-    out += ["## 4. Stock actuel par entrepôt (`warehouse`)", "", "| Magasin | Entrepôt | Lignes | Quantité totale |", "|---|---|---|---|"]
-    for st in CONFIG["stores"]:
-        res, err = _try(lambda st=st: client.get("Stock/byWarehouse", {"warehouse": st["warehouse"]}))
-        out += [f"| {st['code']} | `{st['warehouse']}` | {err or len(res)} | {'' if err else round(sum(num(r.get('quantityOnHand')) for r in res))} |"]
-    out += [""]
+    out += ["## 4. Stock actuel (tout le stock, réparti par organisation et entrepôt)", ""]
+    res, err = _try(lambda: client.get("Stock"))
+    if err:
+        out += [f"❌ `{err}`", ""]
+    else:
+        agg = Counter()
+        lines = Counter()
+        for r in res:
+            key = (str(r.get("organization")), str(r.get("warehouse")))
+            agg[key] += num(r.get("quantityOnHand"))
+            lines[key] += 1
+        out += ["| Organisation (search key) | Entrepôt (search key) | Lignes | Quantité totale |", "|---|---|---|---|"]
+        out += [f"| {o} | `{w}` | {lines[(o, w)]} | {round(q)} |" for (o, w), q in sorted(agg.items())]
+        out += [""]
 
     # 5. Référentiel
     out += ["## 5. Référentiel", ""]

@@ -28,14 +28,25 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
     couts = refs.get("couts", {})
     photo = {"date": day.isoformat(), "maj": now_iso, "source": client.source, "magasins": {}}
     rows = []
-    for st in CONFIG["stores"] + CONFIG.get("stock_extra", []):
+    # Tout le stock en un appel, réparti ensuite par organisation (search key) : pas besoin de
+    # connaître le code de chaque entrepôt, et les entrepôts hors magasin (dépôt central) sont détectés.
+    all_stock = client.get("Stock", {"_day": day.isoformat()} if client.mock else {})
+    by_store = defaultdict(list)
+    store_by_org = {str(s.get("search_key", s["code"])): s for s in CONFIG["stores"]}
+    store_by_wh = {str(s["warehouse"]): s for s in CONFIG["stores"]}
+    extras = {str(e["warehouse"]): e for e in CONFIG.get("stock_extra", [])}
+    for rec in all_stock:
+        wh, org = str(rec.get("warehouse") or ""), str(rec.get("organization") or "")
+        st = extras.get(wh) or store_by_org.get(org) or store_by_wh.get(wh)
+        if st is None:  # entrepôt inconnu : on le montre sous son propre code
+            st = extras.setdefault(wh, {"code": wh, "label": f"Entrepôt {wh}", "warehouse": wh, "type": "Entrepôt"})
+        by_store[st["code"]].append(rec)
+    locations = CONFIG["stores"] + list(extras.values())
+    for st in locations:
         sells = st in CONFIG["stores"]  # un entrepôt central ne vend pas : pas de rupture / dormant / couverture
-        params = {"warehouse": st["warehouse"]}
-        if client.mock:
-            params["_day"] = day.isoformat()
         stock = defaultdict(float)
         names = {}
-        for rec in client.get("Stock/byWarehouse", params):
+        for rec in by_store.get(st["code"], []):
             pi = rec.get("product_info") or {}
             sk = R.sk_of(refs, rec)
             stock[sk] += num(rec.get("quantityOnHand"))
@@ -78,5 +89,6 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             "ruptures": sorted(ruptures, key=lambda x: -x["vendu"])[:15],
             "dormants": sorted(dormants, key=lambda x: -x["valeur"])[:15],
         }
+    photo["emplacements"] = [{"code": s["code"], "label": s["label"], "type": s.get("type", "Magasin")} for s in locations]
     save_json("stocks/photo.json", photo)
     upsert("stocks/historique.json", rows, ("date", "magasin", "secteur"))
