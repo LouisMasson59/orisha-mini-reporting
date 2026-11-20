@@ -159,7 +159,7 @@ const lineDs = (label, data, color, dashed) => ({type:"line", label, data, borde
 const legend = (el, items) => document.getElementById(el).innerHTML = items.map(([l,c]) => `<span><i style="background:${c}"></i>${esc(l)}</span>`).join("");
 const dataTable = (el, head, rows) => document.getElementById(el).innerHTML = `<table><tr>${head.map((h,i)=>`<th class="${i?'n':''}">${esc(h)}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i?'n':''}">${c}</td>`).join("")}</tr>`).join("")}</table>`;
 
-function storeLabel(code){ return ([...S.meta.magasins, ...(S.meta.entrepots||[])].find(m=>m.code===code)||{label:code}).label; }
+function storeLabel(code){ return ([...S.meta.magasins, ...(S.meta.entrepots||[]), ...((S.photo&&S.photo.emplacements)||[])].find(m=>m.code===code)||{label:code}).label; }
 function block(day){ if(!day) return null; return S.store==="ALL" ? day.total : (day.magasins||{})[S.store]; }
 function histDay(date){
   const rows = (S.hist||[]).filter(r => r.date===date && (S.store==="ALL" || r.magasin===S.store));
