@@ -199,6 +199,7 @@ function renderVentes(){
     ["Articles par ticket", k.upt==null?"–":n1.format(k.upt), delta(k.upt, p&&p.upt)],
     ["Taux de marge", pct(k.taux_marge), delta(k.taux_marge, p&&p.taux_marge, true, true)],
     ["Taux de remise", pct(k.taux_remise), delta(k.taux_remise, p&&p.taux_remise, false, true)],
+    ["Retours", eur0.format(k.retours_ttc||0), `<div class="delta">${n0.format(k.retours_tickets||0)} document(s) de retour · ${pct(k.taux_retour)} des ventes</div>`],
   ];
   document.getElementById("tiles").innerHTML = tiles.map(([l,v,d,h]) => `<div class="card tile ${h?'hero':''}"><div class="lbl">${l}</div><div class="val">${v}</div>${d}</div>`).join("");
 
@@ -285,6 +286,8 @@ function renderStocks(){
   dataTable("tStock", ["Date", ...stores.map(storeLabel)], dates.slice(-30).map(d=>[shortDate(d), ...stores.map(c=>{const v=sv(d,c);return v==null?"–":eur0.format(v);})]));
 
   // Carte magasin × secteur (valeur : teinte séquentielle violette)
+  const sansCout = stores.reduce((a,c)=>a+((ph.magasins[c]||{}).refs_sans_cout||0),0);
+  document.getElementById("subHeat").textContent = "Valeur au coût et couverture (jours de vente)" + (sansCout ? ` · ⚠ ${sansCout} référence(s) sans coût, valorisées à 0` : "");
   const secs = Object.keys(secAgg).sort(); let maxVal = 1;
   secs.forEach(s => stores.forEach(c => { const x = secAgg[s][c]; if(x) maxVal = Math.max(maxVal, x.valeur||0); }));
   const shade = v => { const t = Math.sqrt((v||0)/maxVal); return `rgba(72,40,130,${(0.06+0.5*t).toFixed(2)})`; };
