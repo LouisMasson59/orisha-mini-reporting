@@ -19,3 +19,10 @@ jobs:
           python-version: "3.12"
       - name: Tester les API Openbravo
         run: python -m collector.run diagnostic
+      - name: Publier les échantillons bruts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-echantillons
+          path: diagnostic/
+          if-no-files-found: ignore
