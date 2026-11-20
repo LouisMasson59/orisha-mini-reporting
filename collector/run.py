@@ -2,6 +2,7 @@
 
   python -m collector.run ventes [--date AAAA-MM-JJ]       ventes du jour (relancé toutes les 30 min)
   python -m collector.run nuit [--date AAAA-MM-JJ]         référentiel + clôture des ventes de la veille + stocks + achats
+  python -m collector.run diagnostic                        teste les API réelles et indique les valeurs de config.json
   python -m collector.run rattrapage --du AAAA-MM-JJ --au AAAA-MM-JJ
                                                            recharge l'historique des ventes (et, en simulation,
                                                            des photos de stock / achats pour la démo)
@@ -17,7 +18,7 @@ from .store import days_between, now_local, parse_day, today, write_meta
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("commande", choices=["ventes", "nuit", "rattrapage"])
+    ap.add_argument("commande", choices=["ventes", "nuit", "rattrapage", "diagnostic"])
     ap.add_argument("--date")
     ap.add_argument("--du")
     ap.add_argument("--au")
@@ -26,6 +27,11 @@ def main():
     client = OBClient()
     now_iso = now_local().isoformat(timespec="seconds")
     day = parse_day(a.date) if a.date else today()
+
+    if a.commande == "diagnostic":
+        from . import diagnostic
+        diagnostic.main(client)
+        return
 
     if a.commande == "ventes":
         rf = refs.load(client)

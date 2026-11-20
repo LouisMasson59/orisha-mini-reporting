@@ -58,6 +58,14 @@ class OBClient:
             page += 1
         return out
 
+    def get_page(self, path: str, params: dict | None = None, size: int = 20) -> dict:
+        """Une seule page, réponse brute (pour le diagnostic)."""
+        if self.mock:
+            self.calls += 1
+            return {"data": self._mock.get(path, dict(params or {}))[:size]}
+        q = dict(params or {}, _page=1, _pageSize=size)
+        return self._request(self.base + path + ("?" + urllib.parse.urlencode(q)))
+
     def _request(self, url: str) -> dict:
         for attempt in range(4):
             try:
