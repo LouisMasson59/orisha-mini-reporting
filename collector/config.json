@@ -5,15 +5,66 @@
   "cost_price_list": "Purchase Price List EUR",
   "default_lead_days": 7,
   "stores": [
-    { "code": "0001", "search_key": "0001", "api_name": "Villeneuve d'ascq - rue Papin", "label": "Villeneuve d'Ascq", "warehouse": "0001", "type": "Magasin" },
-    { "code": "0002", "search_key": "0002", "api_name": "Passy - Rue des Pres Moulin", "label": "Paris Passy", "warehouse": "0002", "type": "Magasin" },
-    { "code": "0003", "search_key": "0003", "api_name": "Levallois - rue Anatole France", "label": "Levallois", "warehouse": "0003", "type": "Magasin" },
-    { "code": "ECOM", "search_key": "E-Commerce", "api_name": "E-Commerce", "label": "E-Commerce", "warehouse": "E-Commerce", "type": "Web" }
+    {
+      "code": "0001",
+      "search_key": "0001",
+      "api_name": "Villeneuve d'ascq - rue Papin",
+      "label": "Villeneuve d'Ascq",
+      "warehouse": "0001",
+      "type": "Magasin"
+    },
+    {
+      "code": "0002",
+      "search_key": "0002",
+      "api_name": "Passy - Rue des Pres Moulin",
+      "label": "Paris Passy",
+      "warehouse": "0002",
+      "type": "Magasin"
+    },
+    {
+      "code": "0003",
+      "search_key": "0003",
+      "api_name": "Levallois - rue Anatole France",
+      "label": "Levallois",
+      "warehouse": "0003",
+      "type": "Magasin"
+    },
+    {
+      "code": "ECOM",
+      "search_key": "E-Commerce",
+      "api_name": "E-Commerce",
+      "label": "E-Commerce",
+      "warehouse": "E-Commerce",
+      "type": "Web"
+    }
   ],
-  "purchase_orgs": ["@magasins", "France"],
+  "purchase_orgs": [
+    "@magasins",
+    "France"
+  ],
   "purchase_history_days": 180,
-  "excluded_order_flags": ["isCancelled", "isVoid", "isDeleted", "isDraftOrder", "isLayaway"],
-  "purchase_document_keywords": ["purchase", "achat", "compra", "vendor", "rtv"],
+  "excluded_order_flags": [
+    "isCancelled",
+    "isVoid",
+    "isDeleted",
+    "isDraftOrder",
+    "isLayaway"
+  ],
+  "purchase_document_keywords": [
+    "purchase",
+    "achat",
+    "compra",
+    "vendor",
+    "rtv"
+  ],
   "overstock_days": 90,
-  "sales_window_days": 30
+  "sales_window_days": 30,
+  "stock_extra": [
+    {
+      "code": "CW",
+      "label": "Dépôt central France",
+      "warehouse": "CW",
+      "type": "Entrepôt"
+    }
+  ]
 }

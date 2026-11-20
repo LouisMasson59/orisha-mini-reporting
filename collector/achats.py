@@ -43,10 +43,11 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
 
     sup = defaultdict(lambda: defaultdict(float))
     sectors = defaultdict(Counter)
-    due_by_doc, order_date_by_doc = {}, {}
+    due_by_doc, order_date_by_doc, po_supplier = {}, {}, {}
     retards = []
     for o in pos:
-        bp = o.get("businessPartner") or "Fournisseur inconnu"
+        bp = R.supplier(refs, o.get("businessPartner"))
+        po_supplier[o.get("documentNo")] = bp
         od = _d(o.get("orderDate"))
         head_due = _d(o.get("scheduledDeliveryDate") or o.get("deliveryDate") or o.get("datePromised"))
         for l in o.get("lines") or []:
@@ -71,7 +72,7 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
                 if due and due < day:
                     s["lignes_retard"] += 1
                     s["valeur_retard"] += rest * price
-                    retards.append({"doc": o.get("documentNo"), "fournisseur": bp, "produit": R.product_name(refs, sk, pi.get("name")),
+                    retards.append({"doc": o.get("documentNo"), "fournisseur": bp, "produit": R.product_name(refs, sk, pi.get("name")), "sk": sk,
                                     "qte_restante": r2(rest), "valeur": r2(rest * price), "date_prevue": due.isoformat(), "jours_retard": (day - due).days})
             if due and day - timedelta(days=30) <= due < day:
                 s["cmd_30"] += ordered
@@ -79,10 +80,13 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
 
     rec_rows = defaultdict(lambda: defaultdict(float))
     for g in receipts:
-        bp = g.get("businessPartner") or "Fournisseur inconnu"
+        bp = po_supplier.get(g.get("orderDocumentNo")) or R.supplier(refs, g.get("businessPartner"))
         md = _d(g.get("movementDate"))
         qty = sum(num(l.get("movementQuantity")) for l in g.get("lines") or [])
-        val = sum(num(l.get("movementQuantity")) * couts.get(R.sk_of(refs, l), 0.0) for l in g.get("lines") or [])
+        def unit_price(l):
+            ol = l.get("orderLine")
+            return (num(ol.get("netUnitPrice")) if isinstance(ol, dict) else 0.0) or couts.get(R.sk_of(refs, l), 0.0)
+        val = sum(num(l.get("movementQuantity")) * unit_price(l) for l in g.get("lines") or [])
         if md:
             r = rec_rows[(md.isoformat(), bp)]
             r["qte"] += qty

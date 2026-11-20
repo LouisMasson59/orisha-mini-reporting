@@ -68,5 +68,6 @@ def write_meta(source: str) -> None:
         "maj": now_local().isoformat(timespec="seconds"),
         "source": source,
         "magasins": [{"code": s["code"], "label": s["label"], "type": s["type"]} for s in CONFIG["stores"]],
+        "entrepots": [{"code": s["code"], "label": s["label"], "type": s.get("type", "Entrepôt")} for s in CONFIG.get("stock_extra", [])],
     })
     save_json("meta.json", meta)

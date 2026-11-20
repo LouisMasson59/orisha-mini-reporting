@@ -28,7 +28,8 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
     couts = refs.get("couts", {})
     photo = {"date": day.isoformat(), "maj": now_iso, "source": client.source, "magasins": {}}
     rows = []
-    for st in CONFIG["stores"]:
+    for st in CONFIG["stores"] + CONFIG.get("stock_extra", []):
+        sells = st in CONFIG["stores"]  # un entrepôt central ne vend pas : pas de rupture / dormant / couverture
         params = {"warehouse": st["warehouse"]}
         if client.mock:
             params["_day"] = day.isoformat()
@@ -39,12 +40,13 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             sk = R.sk_of(refs, rec)
             stock[sk] += num(rec.get("quantityOnHand"))
             names[sk] = pi.get("name") or rec.get("product")
-        sold = _sales_window(st["code"], day, win)
+        sold = _sales_window(st["code"], day, win) if sells else {}
+        negatifs = sum(1 for v in stock.values() if v < 0)
         sect = defaultdict(lambda: {"qte": 0.0, "valeur": 0.0, "refs": 0, "ruptures": 0, "dormants": 0, "vendu": 0.0})
         ruptures, dormants = [], []
         sans_cout = 0
         for sk in set(stock) | set(sold):
-            q, s = stock.get(sk, 0.0), sold.get(sk, 0.0)
+            q, s = max(0.0, stock.get(sk, 0.0)), sold.get(sk, 0.0)  # stock négatif ramené à 0 (compté à part)
             sec = R.sector(refs, sk)
             nom = R.product_name(refs, sk, names.get(sk))
             val = q * couts.get(sk, 0.0)
@@ -59,18 +61,20 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             if s > 0 and q <= 0:
                 a["ruptures"] += 1
                 ruptures.append({"sk": sk, "nom": nom, "secteur": sec, "vendu": r2(s)})
-            elif q > 0 and s == 0:
+            elif q > 0 and s == 0 and sells:
                 a["dormants"] += 1
                 dormants.append({"sk": sk, "nom": nom, "secteur": sec, "qte": r2(q), "valeur": r2(val)})
         detail = {}
         for sec, a in sorted(sect.items()):
-            cov = a["qte"] / (a["vendu"] / win) if a["vendu"] > 0 else None
+            cov = a["qte"] / (a["vendu"] / win) if sells and a["vendu"] > 0 else None
             detail[sec] = {"qte": r2(a["qte"]), "valeur": r2(a["valeur"]), "refs": a["refs"], "ruptures": a["ruptures"],
                            "dormants": a["dormants"], "couverture_j": r2(cov), "surstock": bool(cov and cov > over)}
             rows.append({"date": day.isoformat(), "magasin": st["code"], "secteur": sec, **{k: detail[sec][k] for k in ("qte", "valeur", "ruptures", "dormants", "couverture_j")}})
         photo["magasins"][st["code"]] = {
             "secteurs": detail,
             "refs_sans_cout": sans_cout,
+            "refs_stock_negatif": negatifs,
+            "vend": sells,
             "ruptures": sorted(ruptures, key=lambda x: -x["vendu"])[:15],
             "dormants": sorted(dormants, key=lambda x: -x["valeur"])[:15],
         }

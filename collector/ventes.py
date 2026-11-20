@@ -65,6 +65,9 @@ def build_block(orders: list, refs: dict, day: date) -> dict:
     pay = defaultdict(float)
     sect = defaultdict(lambda: {"qte": 0.0, "ca_ttc": 0.0, "ca_ht": 0.0, "marge": 0.0})
     for o in orders:
+        lines = [l for l in o.get("lines") or [] if not l.get("isDeleted")]
+        if not any(num(l.get("orderedQuantity")) or num(l.get("grossAmount")) for l in lines):
+            continue  # ticket vidé ou abandonné en caisse (toutes les lignes supprimées, montant 0) : pas un ticket
         ret = is_return(o)
         neg = (lambda v: -abs(v)) if ret else (lambda v: v)  # noqa: E731  un document de retour compte toujours en négatif
         if ret:
@@ -87,8 +90,10 @@ def build_block(orders: list, refs: dict, day: date) -> dict:
                 k["retours_ttc"] += -ttc  # retours : documents de retour + lignes négatives des tickets mixtes
             else:
                 k["ventes_brutes_ttc"] += ttc
-            cost = num(l.get("purchasePrice")) or refs.get("couts", {}).get(sk, 0.0)
-            marge = ht - qty * cost
+            cost = num(l.get("purchasePrice")) or refs.get("couts", {}).get(sk)
+            marge = (ht - qty * cost) if cost else 0.0  # sans coût connu, la ligne n'entre pas dans la marge
+            if cost:
+                k["ca_ht_avec_cout"] += ht
             if num(l.get("grossListPrice")):
                 remise = max(0.0, num(l.get("grossListPrice")) * qty - ttc) if qty > 0 else 0.0
             else:
@@ -119,7 +124,9 @@ def build_block(orders: list, refs: dict, day: date) -> dict:
     kpi = {
         "ca_ttc": r2(k["ca_ttc"]), "ca_ht": r2(k["ca_ht"]), "tickets": int(t), "articles": r2(k["articles"]),
         "panier": r2(k["ca_ttc"] / t) if t else None, "upt": r2(k["articles"] / t) if t else None,
-        "marge": r2(k["marge"]), "taux_marge": r2(k["marge"] / k["ca_ht"] * 100) if k["ca_ht"] else None,
+        "marge": r2(k["marge"]), "taux_marge": r2(k["marge"] / k["ca_ht_avec_cout"] * 100) if k["ca_ht_avec_cout"] else None,
+        "ca_ht_avec_cout": r2(k["ca_ht_avec_cout"]),
+        "part_ca_avec_cout": r2(k["ca_ht_avec_cout"] / k["ca_ht"] * 100) if k["ca_ht"] else None,
         "retours_ttc": r2(k["retours_ttc"]), "retours_tickets": int(k["retours_tickets"]),
         "taux_retour": r2(k["retours_ttc"] / k["ventes_brutes_ttc"] * 100) if k["ventes_brutes_ttc"] else None,
         "remise": r2(k["remise"]), "taux_remise": r2(k["remise"] / (k["ca_ttc"] + k["remise"]) * 100) if k["ca_ttc"] + k["remise"] else None,
