@@ -17,12 +17,21 @@ def is_excluded(o: dict) -> bool:
 
 
 def fetch(client, store: dict, d1: date, d2: date) -> list:
+    """Commandes de vente d'un magasin entre deux dates (par tranches de 31 jours).
+
+    La borne de fin est élargie d'un jour (au cas où l'API la traite comme exclusive),
+    puis les doublons entre tranches sont retirés ; le tri par jour se fait ensuite sur orderDate.
+    """
     org = orgs.resolve(client).get(store["code"]) or store["api_name"]
-    """Commandes de vente d'un magasin entre deux dates (par tranches de 31 jours)."""
-    out, d = [], d1
+    seen, out, d = set(), [], d1
     while d <= d2:
         e = min(d2, d + timedelta(days=30))
-        out += client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d.isoformat(), "dateTo": e.isoformat()})
+        for o in client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d.isoformat(), "dateTo": (e + timedelta(days=1)).isoformat()}):
+            key = o.get("id") or o.get("documentNo")
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(o)
         d = e + timedelta(days=1)
     return [o for o in out if not is_purchase(o) and not is_excluded(o)]
 
@@ -126,17 +135,29 @@ def write_days(by_day: dict, refs: dict, source: str, now_iso: str) -> None:
     save_json("ventes/jours.json", sorted(jours))
 
 
+def sale_day(o: dict):
+    """Jour de rattachement d'une vente : date de commande (la date métier POS peut rester
+    sur une ancienne journée tant que la caisse n'a pas été clôturée)."""
+    for f in ("orderDate", "businessDate"):
+        try:
+            return date.fromisoformat(str(o.get(f))[:10])
+        except ValueError:
+            continue
+    return None
+
+
 def collect(client, refs: dict, d1: date, d2: date, now_iso: str) -> int:
     by_day = {d1 + timedelta(days=i): {} for i in range((d2 - d1).days + 1)}
     n = 0
     for st in CONFIG["stores"]:
-        for o in fetch(client, st, d1, d2):
-            try:
-                od = date.fromisoformat(str(o.get("businessDate") or o.get("orderDate"))[:10])
-            except ValueError:
-                continue
+        got = fetch(client, st, d1, d2)
+        kept = 0
+        for o in got:
+            od = sale_day(o)
             if od in by_day:
                 by_day[od].setdefault(st["code"], []).append(o)
-                n += 1
+                kept += 1
+        n += kept
+        print(f"  {st['code']} {st['label']} : {len(got)} commandes de vente reçues, {kept} retenues sur la période")
     write_days(by_day, refs, client.source, now_iso)
     return n
