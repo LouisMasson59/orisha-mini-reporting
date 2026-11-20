@@ -124,7 +124,7 @@
 </main>
 
 <script>
-const STORE_COLORS = {"0001":"#6946AA","0002":"#E8005F","0003":"#12B5A4","ECOM":"#D69800"}; // validées (contraste : légende + tableau)
+const STORE_COLORS = {"0001":"#6946AA","0002":"#E8005F","0003":"#12B5A4","ECOM":"#D69800","CW":"#8a8796"}; // validées (contraste : légende + tableau)
 const PRIMARY = "#482882", GHOST = "#b9b5c6", GRID = "#ececf1";
 const S = {store:"ALL", date:null, tab:"ventes"};
 let CMP = "vs même jour S-1";
@@ -159,14 +159,14 @@ const lineDs = (label, data, color, dashed) => ({type:"line", label, data, borde
 const legend = (el, items) => document.getElementById(el).innerHTML = items.map(([l,c]) => `<span><i style="background:${c}"></i>${esc(l)}</span>`).join("");
 const dataTable = (el, head, rows) => document.getElementById(el).innerHTML = `<table><tr>${head.map((h,i)=>`<th class="${i?'n':''}">${esc(h)}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i?'n':''}">${c}</td>`).join("")}</tr>`).join("")}</table>`;
 
-function storeLabel(code){ return (S.meta.magasins.find(m=>m.code===code)||{label:code}).label; }
+function storeLabel(code){ return ([...S.meta.magasins, ...(S.meta.entrepots||[])].find(m=>m.code===code)||{label:code}).label; }
 function block(day){ if(!day) return null; return S.store==="ALL" ? day.total : (day.magasins||{})[S.store]; }
 function histDay(date){
   const rows = (S.hist||[]).filter(r => r.date===date && (S.store==="ALL" || r.magasin===S.store));
   if(!rows.length) return null;
-  const t = rows.reduce((a,r)=>({ca_ttc:a.ca_ttc+(r.ca_ttc||0), ca_ht:a.ca_ht+(r.ca_ht||0), tickets:a.tickets+(r.tickets||0), articles:a.articles+(r.articles||0), marge:a.marge+(r.marge||0), remise:a.remise+(r.remise||0)}), {ca_ttc:0,ca_ht:0,tickets:0,articles:0,marge:0,remise:0});
+  const t = rows.reduce((a,r)=>({ca_ttc:a.ca_ttc+(r.ca_ttc||0), ca_ht:a.ca_ht+(r.ca_ht||0), tickets:a.tickets+(r.tickets||0), articles:a.articles+(r.articles||0), marge:a.marge+(r.marge||0), remise:a.remise+(r.remise||0), hc:a.hc+(r.ca_ht_avec_cout ?? r.ca_ht ?? 0)}), {ca_ttc:0,ca_ht:0,tickets:0,articles:0,marge:0,remise:0,hc:0});
   t.panier = t.tickets ? t.ca_ttc/t.tickets : null; t.upt = t.tickets ? t.articles/t.tickets : null;
-  t.taux_marge = t.ca_ht ? t.marge/t.ca_ht*100 : null; t.taux_remise = (t.ca_ttc+t.remise) ? t.remise/(t.ca_ttc+t.remise)*100 : null;
+  t.taux_marge = t.hc ? t.marge/t.hc*100 : null; t.taux_remise = (t.ca_ttc+t.remise) ? t.remise/(t.ca_ttc+t.remise)*100 : null;
   return t;
 }
 function delta(cur, prev, goodUp=true, isPts=false){
@@ -287,7 +287,8 @@ function renderStocks(){
 
   // Carte magasin × secteur (valeur : teinte séquentielle violette)
   const sansCout = stores.reduce((a,c)=>a+((ph.magasins[c]||{}).refs_sans_cout||0),0);
-  document.getElementById("subHeat").textContent = "Valeur au coût et couverture (jours de vente)" + (sansCout ? ` · ⚠ ${sansCout} référence(s) sans coût, valorisées à 0` : "");
+  const negatifs = stores.reduce((a,c)=>a+((ph.magasins[c]||{}).refs_stock_negatif||0),0);
+  document.getElementById("subHeat").textContent = "Valeur au coût et couverture (jours de vente)" + (sansCout ? ` · ⚠ ${sansCout} réf. sans coût (valorisées à 0)` : "") + (negatifs ? ` · ⚠ ${negatifs} réf. en stock négatif (comptées à 0)` : "");
   const secs = Object.keys(secAgg).sort(); let maxVal = 1;
   secs.forEach(s => stores.forEach(c => { const x = secAgg[s][c]; if(x) maxVal = Math.max(maxVal, x.valeur||0); }));
   const shade = v => { const t = Math.sqrt((v||0)/maxVal); return `rgba(72,40,130,${(0.06+0.5*t).toFixed(2)})`; };
@@ -304,7 +305,7 @@ function renderStocks(){
   document.getElementById("fournisseurs").innerHTML = f.length ? `<table><tr><th>Fournisseur</th><th>Secteur</th><th>Taux de service</th><th>Ponctualité</th><th class="n">Délai moyen</th><th class="n">Lignes en retard</th><th class="n">Valeur en retard</th><th class="n">Reste à livrer</th></tr>${f.map(x=>`<tr><td>${esc(x.fournisseur)}</td><td>${esc(x.secteur||"–")}</td><td>${status(x.taux_service_30j)}</td><td>${status(x.ponctualite_30j)}</td><td class="n">${x.delai_moyen_j==null?"–":n1.format(x.delai_moyen_j)+" j"}</td><td class="n">${n0.format(x.lignes_retard)}</td><td class="n">${eur0.format(x.valeur_retard||0)}</td><td class="n">${eur0.format(x.valeur_restante||0)}</td></tr>`).join("")}</table>` : `<div class="empty">Pas encore de données achats.</div>`;
 
   const rt = ((fo&&fo.retards)||[]).slice(0,10);
-  document.getElementById("retards").innerHTML = rt.length ? `<table><tr><th>Commande</th><th>Fournisseur</th><th>Produit</th><th class="n">Reste</th><th class="n">Retard</th></tr>${rt.map(x=>`<tr><td>${esc(x.doc)}</td><td>${esc(x.fournisseur)}</td><td>${esc(x.produit)}</td><td class="n">${n0.format(x.qte_restante)}</td><td class="n"><span class="st ${x.jours_retard>14?'crit':'warn'}">${x.jours_retard>14?'✕':'!'} ${x.jours_retard} j</span></td></tr>`).join("")}</table>` : `<div class="empty">Aucune commande en retard</div>`;
+  document.getElementById("retards").innerHTML = rt.length ? `<table><tr><th>Commande</th><th>Fournisseur</th><th>Produit</th><th class="n">Reste</th><th class="n">Retard</th></tr>${rt.map(x=>`<tr><td>${esc(x.doc)}</td><td>${esc(x.fournisseur)}</td><td>${esc(x.produit)}${x.sk?`<br><small style="color:var(--muted)">${esc(x.sk)}</small>`:""}</td><td class="n">${n0.format(x.qte_restante)}</td><td class="n"><span class="st ${x.jours_retard>14?'crit':'warn'}">${x.jours_retard>14?'✕':'!'} ${x.jours_retard} j</span></td></tr>`).join("")}</table>` : `<div class="empty">Aucune commande en retard</div>`;
 
   // Réceptions
   const rec = S.rec||[]; const end = (fo&&fo.date) || ph.date; const rd = []; for(let i=29;i>=0;i--) rd.push(addDays(end,-i));
