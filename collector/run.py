@@ -2,6 +2,11 @@
 
   python -m collector.run ventes [--date AAAA-MM-JJ]       ventes du jour (relancé toutes les 30 min)
   python -m collector.run nuit [--date AAAA-MM-JJ]         référentiel + clôture des ventes de la veille + stocks + achats
+  python -m collector.run reappro [--magasin 0011] [--seuils-json '[...]'] [--demande ID]
+                                                           propositions de réappro mini/maxi
+  python -m collector.run commande [--magasin 0011] [--lignes-json '[{"produit":..,"qte":..}]'] [--demande ID]
+                                                           crée dans Openbravo les commandes validées
+                                                           (sans --lignes-json : toutes les propositions)
   python -m collector.run diagnostic                        teste les API réelles et indique les valeurs de config.json
   python -m collector.run rattrapage --du AAAA-MM-JJ --au AAAA-MM-JJ
                                                            recharge l'historique des ventes (et, en simulation,
@@ -11,14 +16,20 @@ import argparse
 import time
 from datetime import timedelta
 
-from . import achats, refs, stocks, ventes
+import os
+
+from . import achats, reappro, refs, stocks, ventes
 from .ob_client import OBClient
 from .store import days_between, now_local, parse_day, today, write_meta
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("commande", choices=["ventes", "nuit", "rattrapage", "diagnostic"])
+    ap.add_argument("commande", choices=["ventes", "nuit", "rattrapage", "diagnostic", "reappro", "commande"])
+    ap.add_argument("--magasin")
+    ap.add_argument("--seuils-json", default=os.environ.get("SEUILS_JSON") or None)
+    ap.add_argument("--lignes-json", default=os.environ.get("LIGNES_JSON") or None)
+    ap.add_argument("--demande", default=os.environ.get("DEMANDE") or None)
     ap.add_argument("--date")
     ap.add_argument("--du")
     ap.add_argument("--au")
@@ -33,7 +44,21 @@ def main():
         diagnostic.main(client)
         return
 
-    if a.commande == "ventes":
+    if a.commande in ("reappro", "commande"):
+        codes = [a.magasin] if a.magasin else [m["code"] for m in reappro.RC.get("magasins", [])]
+        for code in codes:
+            if a.commande == "reappro":
+                r = reappro.calculer(client, code, day, now_iso, a.seuils_json, a.demande)
+                print(f"Réappro {code} : {r['resume']['a_commander']} article(s) à commander, "
+                      f"{r['resume']['montant_propose']} € HT, {len(r['anomalies'])} anomalie(s)")
+                for x in r["anomalies"]:
+                    print("  !", x)
+            else:
+                for c in reappro.commander(client, code, day, now_iso, a.lignes_json, a.seuils_json, a.demande):
+                    print(f"Commande {c.get('documentNo') or '-'} {c.get('fournisseur') or ''} : {c['etat']}"
+                          + (f" — {str(c.get('detail'))[:400]}" if c.get("detail") else ""))
+
+    elif a.commande == "ventes":
         rf = refs.load(client)
         n = ventes.collect(client, rf, day, day, now_iso)
         print(f"Ventes {day} : {n} commandes")
@@ -47,6 +72,12 @@ def main():
         print("Photo de stock enregistrée")
         achats.collect(client, rf, day, now_iso)
         print("Achats / fournisseurs mis à jour")
+        for m in reappro.RC.get("magasins", []):
+            try:
+                r = reappro.calculer(client, m["code"], day, now_iso)
+                print(f"Réappro {m['code']} : {r['resume']['a_commander']} article(s) à commander")
+            except (SystemExit, Exception) as e:  # le réappro ne doit pas faire échouer la collecte de nuit
+                print(f"Réappro {m['code']} non calculé : {e}")
 
     else:
         if not (a.du and a.au):

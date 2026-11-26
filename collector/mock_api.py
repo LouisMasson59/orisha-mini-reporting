@@ -13,6 +13,7 @@ import math
 import random
 from datetime import date, datetime, timedelta
 
+from . import mock_franchise as FR
 from .store import CONFIG, now_local, parse_day, today
 
 CATALOGUE = {
@@ -77,17 +78,49 @@ class MockAPI:
                                           "sector": sector, "price": price, "cost": cost, "vat": 0.055 if sector == "Épicerie" else 0.20})
         self.by_sk = {p["searchKey"]: p for p in self.products}
         self._po_cache = None
+        self._created, self._requests = [], {}
+
+    # ------------------------------------------------------------------ import simulé
+    def post_import(self, entity: str, records: list) -> dict:
+        rid = f"MOCK-{len(self._requests) + 1:04d}"
+        errors = []
+        for r in records:
+            if entity == "PurchaseOrder":
+                missing = [k for k in ("documentNo", "businessPartner", "invoiceFrom", "orderDate", "accountingDate", "currency", "lines") if not r.get(k)]
+                if missing or any(not l.get("tax") for l in r.get("lines") or []):
+                    errors.append(f"{r.get('documentNo')} : champs manquants {missing or ['tax']}")
+                else:
+                    self._created.append(r)
+        self._requests[rid] = errors
+        return {"data": {"request": {"id": rid}}, "links": {"href": f"StatusService?id={rid}"}}
+
+    def status(self, rid: str) -> dict:
+        errs = self._requests.get(rid)
+        if errs is None:
+            return {"errors": [{"status": 404, "detail": "requête inconnue"}]}
+        return {"data": {"status": "ERROR", "errors": errs}} if errs else {"data": {"status": "SUCCESS"}}
 
     # ------------------------------------------------------------------ routing
     def get(self, path: str, p: dict) -> list:
         if path == "Product":
-            return [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products]
+            return [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products] + FR.products()
+        if path == "TaxRate":
+            return FR.TAX_RATES
+        if path == "BusinessPartner/bySearchKey":
+            return FR.business_partner(p.get("businessPartnerSearchKey"))
+        if path == "BusinessPartner/byVendor":
+            return FR.vendors()
+        if path == "Order/byOrgOrderDateRange" and p.get("organization") in (FR.ORG["name"], FR.ORG["searchKey"]):
+            d1, d2 = parse_day(p["dateFrom"]), parse_day(p["dateTo"])
+            return [o for o in FR.orders(self._created) if d1 <= parse_day(o["orderDate"]) <= d2]
+        if path == "Stock/byWarehouse" and p.get("warehouse") == FR.WH:
+            return FR.stock()
         if path == "ProductCategory":
             return self.categories
         if path == "ProductPrice/byPriceList":
             return [{"product": x["searchKey"], "listPrice": x["price"], "unitPrice": x["price"], "cost": x["cost"], "priceList": p.get("priceList")} for x in self.products]
         if path == "Organization":
-            return [{"id": c, "name": s["api_name"], "searchKey": s.get("search_key", c)} for c, s in self.stores.items()]
+            return [{"id": c, "name": s["api_name"], "searchKey": s.get("search_key", c)} for c, s in self.stores.items()] + [FR.ORG]
         if path == "Order":
             return self._sales("0001", today() - timedelta(days=1)) + [o for o in self._pos()][:5]
         if path == "Order/byOrgOrderDateRange":

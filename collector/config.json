@@ -66,5 +66,38 @@
       "warehouse": "CW",
       "type": "Entrepôt"
     }
-  ]
+  ],
+  "reappro": {
+    "magasins": [
+      {
+        "code": "0011",
+        "search_key": "0011",
+        "api_name": "Courcelles - Store",
+        "label": "Courcelles (franchisé)",
+        "warehouse": "0011",
+        "prefixe_commande": "FR11-PO-"
+      }
+    ],
+    "type_document": "Purchase Order",
+    "liste_prix_achat": "Purchase Price List",
+    "conditions_paiement": "30 jours",
+    "devise": "EUR",
+    "unite": "Unit",
+    "taxes": {
+      "Normal": [
+        "VAT 20%",
+        20
+      ],
+      "Reduced": [
+        "VAT 5.5%",
+        5.5
+      ],
+      "Exempt": [
+        "VAT 0%",
+        0
+      ]
+    },
+    "delai_defaut_j": 7,
+    "historique_commandes_j": 180
+  }
 }
