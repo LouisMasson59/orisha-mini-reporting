@@ -1,4 +1,5 @@
 name: Réappro mini/maxi (franchisé)
+run-name: "Réappro ${{ inputs.magasin }} · ${{ inputs.action }} ${{ inputs.demande }}"
 # Lancement manuel (onglet Actions > Run workflow) ou par le Google Sheet (API workflow_dispatch).
 #   calcul   : met à jour docs/data/reappro/<magasin>.json (propositions)
 #   commande : crée dans Openbravo les commandes des lignes validées, puis recalcule
