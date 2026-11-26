@@ -106,6 +106,12 @@
       "SUP-MEUBLEDESIGN": {
         "adresse": "9 rue du Mobilier"
       }
+    },
+    "seuils_auto": {
+      "actif": true,
+      "fenetre_ventes_j": 30,
+      "securite_j": 7,
+      "couverture_j": 21
     }
   }
 }

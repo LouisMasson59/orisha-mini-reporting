@@ -103,7 +103,13 @@ docs/
 - **Seuils** : `collector/seuils/<magasin>.csv` (`produit;mini;maxi;fournisseur`, fournisseur vide = fournisseur habituel).
   Le colisage (minimum de commande, multiple) et le délai sont lus dans l'onglet **Purchasing** des fiches article Openbravo.
 - **Règle** : commande si *disponible* (stock + reste à recevoir) < mini ; quantité = maxi − disponible, arrondie au colisage.
-- **Calcul** : Actions › *Réappro mini/maxi* › `calcul` (aussi chaque nuit) → onglet **Réappro franchisé** du tableau de bord.
+- **Seuils automatiques** (articles vendus sans seuil manuel) : mini = ventes/jour × (délai fournisseur + sécurité),
+  maxi = mini + ventes/jour × couverture — paramètres dans `config.json` › `reappro.seuils_auto` (désactivables).
+- **Calcul** : bouton **Recalculer** de l'onglet **Réappro franchisé** (ou Actions › *Réappro mini/maxi* › `calcul`), et chaque nuit.
+- **Grille** : filtres (statut, fournisseur, famille, seuil, ruptures, retards, recherche), choix du fournisseur parmi ceux de
+  l'onglet Purchasing (quantité réarrondie au colisage), quantité modifiable, bouton **Commander la sélection**.
+- **Boutons** : ils lancent le workflow via l'API GitHub avec un jeton personnel *fine-grained* (dépôt unique, Actions : read & write,
+  Contents : read) saisi une fois et conservé seulement dans le navigateur (lien « Connecter GitHub »).
 - **Commande** : Actions › *Réappro mini/maxi* › `commande` → une commande d'achat par fournisseur importée dans Openbravo
   (ImportService/PurchaseOrder, statut « Booked »). `lignes_json` vide = toutes les propositions ;
   sinon `[{"produit":"TAPIS-DECO-160X230","qte":3}]` (fournisseur optionnel).
