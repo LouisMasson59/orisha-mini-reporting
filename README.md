@@ -97,3 +97,15 @@ docs/
   data/           les JSON
 .github/workflows/  les 3 tâches planifiées
 ```
+
+## Réappro mini/maxi (complément franchisé — V0)
+
+- **Seuils** : `collector/seuils/<magasin>.csv` (`produit;mini;maxi;fournisseur`, fournisseur vide = fournisseur habituel).
+  Le colisage (minimum de commande, multiple) et le délai sont lus dans l'onglet **Purchasing** des fiches article Openbravo.
+- **Règle** : commande si *disponible* (stock + reste à recevoir) < mini ; quantité = maxi − disponible, arrondie au colisage.
+- **Calcul** : Actions › *Réappro mini/maxi* › `calcul` (aussi chaque nuit) → onglet **Réappro franchisé** du tableau de bord.
+- **Commande** : Actions › *Réappro mini/maxi* › `commande` → une commande d'achat par fournisseur importée dans Openbravo
+  (ImportService/PurchaseOrder, statut « Booked »). `lignes_json` vide = toutes les propositions ;
+  sinon `[{"produit":"TAPIS-DECO-160X230","qte":3}]` (fournisseur optionnel).
+- Magasins concernés : `config.json` › `reappro.magasins` (préfixe de numérotation, entrepôt). Taxe : le champ attend le
+  **taux** (« VAT 20% »), déduit de la catégorie de taxe de l'article.

@@ -72,9 +72,11 @@
 <nav>
   <button class="on" data-tab="ventes">Ventes du jour</button>
   <button data-tab="stocks">Stocks &amp; achats</button>
+  <button data-tab="reappro">Réappro franchisé</button>
 </nav>
 <div class="filters">
-  <label>Magasin <select id="fStore"></select></label>
+  <label id="lblStore">Magasin <select id="fStore"></select></label>
+  <label id="lblRStore" class="hidden">Magasin franchisé <select id="fRStore"></select></label>
   <label id="lblDate">Journée <select id="fDate"></select></label>
   <span class="maj" id="note"></span>
 </div>
@@ -120,6 +122,17 @@
       <div class="card"><h3>Réceptions fournisseurs</h3><div class="sub">Valeur reçue par jour, 30 derniers jours</div><div class="chart"><canvas id="cRec"></canvas></div>
         <details><summary>Voir les données</summary><div id="tRec"></div></details></div>
     </div>
+  </section>
+
+  <!-- ============================ RÉAPPRO FRANCHISÉ ============================ -->
+  <section id="tab-reappro" class="hidden">
+    <div class="grid g-hero" id="tilesReappro"></div>
+    <div class="card" style="margin-top:16px"><h3>Commandes proposées</h3><div class="sub" id="subProp">Regroupées par fournisseur</div><div id="propFour"></div></div>
+    <div class="card" style="margin-top:16px"><h3>Propositions article par article</h3>
+      <div class="sub" id="regle"></div>
+      <div class="legend"><span><span class="st crit">À commander</span> disponible &lt; mini</span><span><span class="st warn">Couvert</span> sous le mini, une commande en cours couvre le besoin</span><span><span class="st good">OK</span></span></div>
+      <div id="propLignes"></div><div id="anomalies"></div></div>
+    <div class="card" style="margin-top:16px"><h3>Commandes créées dans Openbravo</h3><div class="sub">Propositions validées, importées au statut « Booked »</div><div id="cmdCreees"></div></div>
   </section>
 </main>
 
@@ -324,6 +337,7 @@ async function loadAll(first){
   const wasLatest = !S.date || S.auto || S.date === (S.jours||[])[S.jours.length-1];
   S.auto = false;
   Object.assign(S, {meta, jours, hist, photo, stHist, four, rec});
+  await loadReappro();
   if(first){
     document.getElementById("fStore").innerHTML = `<option value="ALL">Tous les magasins</option>` + meta.magasins.map(m=>`<option value="${esc(m.code)}">${esc(m.label)}</option>`).join("");
   }
@@ -342,16 +356,68 @@ async function loadAll(first){
   }
   render();
 }
-function render(){ S.tab==="ventes" ? renderVentes() : renderStocks(); }
+// ------------------------------------------------------------------ RÉAPPRO
+const RSTAT = {a_commander:["crit","À commander"], couvert:["warn","Couvert"], ok:["good","OK"]};
+async function loadReappro(){
+  const idx = await j("reappro/index.json") || [];
+  const sel = document.getElementById("fRStore");
+  if(!S.rstore && idx.length) S.rstore = idx[0].code;
+  sel.innerHTML = idx.map(m=>`<option value="${m.code}" ${m.code===S.rstore?"selected":""}>${esc(m.label)}</option>`).join("");
+  S.reappro = S.rstore ? await j(`reappro/${S.rstore}.json`) : null;
+  S.cmds = await j("reappro/commandes.json") || [];
+}
+function renderReappro(){
+  const R = S.reappro;
+  if(!R){ document.getElementById("tilesReappro").innerHTML = `<div class="card empty">Pas encore de calcul de réappro : lancer « Réappro mini/maxi » dans GitHub Actions.</div>`; return; }
+  const r = R.resume, retard = R.lignes.filter(l=>l.commande_en_retard).length;
+  document.getElementById("tilesReappro").innerHTML = `
+    <div class="card tile hero"><div class="lbl">Montant proposé HT</div><div class="val">${eur0.format(r.montant_propose||0)}</div>
+      <div class="delta">${R.commandes_proposees.length} commande(s) fournisseur · calcul du ${new Date(R.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}</div></div>
+    <div class="card tile"><div class="lbl">Articles à commander</div><div class="val">${r.a_commander}</div><div class="delta">sur ${r.articles_suivis} articles suivis</div></div>
+    <div class="card tile"><div class="lbl">Ruptures</div><div class="val" style="color:${r.ruptures?'var(--crit)':'inherit'}">${r.ruptures}</div><div class="delta">stock nul en magasin</div></div>
+    <div class="card tile"><div class="lbl">Couverts par une commande</div><div class="val">${r.couverts}</div><div class="delta">${retard ? `<b class="down">dont ${retard} en retard</b>` : "aucune en retard"}</div></div>`;
+  document.getElementById("regle").textContent = R.regle;
+  const cp = R.commandes_proposees;
+  document.getElementById("propFour").innerHTML = cp.length ? `<table><tr><th>Fournisseur</th><th class="n">Lignes</th><th class="n">Quantité</th><th class="n">Montant HT</th><th class="n">Livraison prévue</th></tr>${
+    cp.map(c=>`<tr><td>${esc(c.fournisseur_nom)}</td><td class="n">${c.lignes}</td><td class="n">${n0.format(c.qte)}</td><td class="n">${eur2.format(c.montant)}</td><td class="n">${c.livraison_prevue?shortDate(c.livraison_prevue):"–"}</td></tr>`).join("")}</table>`
+    : `<div class="empty">Rien à commander : tous les articles sont au-dessus du mini.</div>`;
+  const cmdTxt = l => (l.commandes||[]).map(c=>`${esc(c.doc)} · ${n0.format(c.qte)} le ${c.date_prevue?shortDate(c.date_prevue):"?"}${c.retard?' <span class="st crit">retard</span>':''}`).join("<br>");
+  document.getElementById("propLignes").innerHTML = `<table><tr><th>Statut</th><th>Article</th><th class="n">Stock</th><th class="n">En commande</th><th class="n">Mini / Maxi</th><th class="n">Qté proposée</th><th class="n">Colisage</th><th>Fournisseur</th><th class="n">Livraison</th><th class="n">Montant HT</th></tr>${
+    R.lignes.map(l=>{ const [c,t] = RSTAT[l.statut];
+      return `<tr><td><span class="st ${c}">${t}</span></td><td>${esc(l.nom)}<div class="maj">${esc(l.sk)}</div></td>
+        <td class="n" style="${l.rupture?'color:var(--crit);font-weight:600':''}">${n0.format(l.stock)}</td>
+        <td class="n">${l.en_commande?`${n0.format(l.en_commande)}<div class="maj">${cmdTxt(l)}</div>`:"–"}</td>
+        <td class="n">${n0.format(l.mini)} / ${n0.format(l.maxi)}</td>
+        <td class="n"><b>${l.qte_proposee?n0.format(l.qte_proposee):"–"}</b>${l.qte_proposee&&l.qte_proposee!==l.besoin?`<div class="maj">besoin ${n0.format(l.besoin)}</div>`:""}</td>
+        <td class="n">${l.qte_proposee?`min ${n0.format(l.minimum_cde||0)} · par ${n0.format(l.multiple||1)}`:"–"}</td>
+        <td>${esc(l.fournisseur_nom||"–")}</td><td class="n">${l.livraison_prevue?shortDate(l.livraison_prevue):"–"}</td>
+        <td class="n">${l.montant?eur2.format(l.montant):"–"}</td></tr>`; }).join("")}</table>`;
+  document.getElementById("anomalies").innerHTML = (R.anomalies||[]).length ? `<details open><summary>${R.anomalies.length} anomalie(s)</summary>${R.anomalies.map(a=>`<div>${esc(a)}</div>`).join("")}</details>` : "";
+  const cmds = S.cmds.filter(c=>c.magasin===S.rstore).slice(-15).reverse();
+  const ET = {ok:["good","Créée"], erreur:["crit","Erreur"], rejet:["crit","Rejetée"], en_cours:["warn","En cours"]};
+  document.getElementById("cmdCreees").innerHTML = cmds.length ? `<table><tr><th>Date</th><th>Commande</th><th>Fournisseur</th><th class="n">Lignes</th><th class="n">Montant HT</th><th class="n">Livraison prévue</th><th>État</th></tr>${
+    cmds.map(c=>{ const [k,t] = ET[c.etat]||["warn",c.etat];
+      return `<tr><td>${new Date(c.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}</td><td>${esc(c.documentNo||"–")}</td><td>${esc(c.fournisseur||"")}</td>
+        <td class="n">${c.lignes??"–"}</td><td class="n">${c.montant_ht!=null?eur2.format(c.montant_ht):"–"}</td><td class="n">${c.livraison_prevue?shortDate(c.livraison_prevue):"–"}</td>
+        <td><span class="st ${k}">${t}</span>${c.detail?`<div class="maj">${esc(typeof c.detail==="string"?c.detail:JSON.stringify(c.detail)).slice(0,300)}</div>`:""}</td></tr>`; }).join("")}</table>`
+    : `<div class="empty">Aucune commande créée depuis le réappro pour l'instant.</div>`;
+}
+
+function render(){ S.tab==="ventes" ? renderVentes() : S.tab==="stocks" ? renderStocks() : renderReappro(); }
 
 document.querySelectorAll("nav button").forEach(btn => btn.onclick = () => {
   S.tab = btn.dataset.tab;
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b===btn));
   document.getElementById("tab-ventes").classList.toggle("hidden", S.tab!=="ventes");
   document.getElementById("tab-stocks").classList.toggle("hidden", S.tab!=="stocks");
+  document.getElementById("tab-reappro").classList.toggle("hidden", S.tab!=="reappro");
   document.getElementById("lblDate").classList.toggle("hidden", S.tab!=="ventes");
+  document.getElementById("lblStore").classList.toggle("hidden", S.tab==="reappro");
+  document.getElementById("lblRStore").classList.toggle("hidden", S.tab!=="reappro");
+  document.getElementById("note").classList.toggle("hidden", S.tab==="reappro");
   render();
 });
+document.getElementById("fRStore").onchange = async e => { S.rstore = e.target.value; await loadReappro(); render(); };
 document.getElementById("fStore").onchange = e => { S.store = e.target.value; render(); };
 document.getElementById("fDate").onchange = async e => { S.date = e.target.value; S.auto = false; document.getElementById("note").textContent = ""; await loadDay(); render(); };
 loadAll(true);
