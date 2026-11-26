@@ -58,7 +58,8 @@ jobs:
         run: |
           git config user.name "reporting-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A docs/data/reappro
+          git add -A docs/data
           if git diff --cached --quiet; then echo "Aucune nouvelle donnée"; exit 0; fi
           git commit -m "Réappro ${{ inputs.magasin }} : ${{ inputs.action }} $(TZ=Europe/Paris date +%F\ %H:%M)"
-          for i in 1 2 3 4 5; do git pull --rebase && git push && break; sleep 5; done
+          for i in 1 2 3 4 5; do git pull --rebase && git push && exit 0; sleep 5; done
+          echo "::error::Impossible d'enregistrer les données dans le dépôt"; exit 1
