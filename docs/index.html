@@ -368,7 +368,9 @@ async function loadReappro(){
 }
 function renderReappro(){
   const R = S.reappro;
-  if(!R){ document.getElementById("tilesReappro").innerHTML = `<div class="card empty">Pas encore de calcul de réappro : lancer « Réappro mini/maxi » dans GitHub Actions.</div>`; return; }
+  document.querySelectorAll("#tab-reappro > .card").forEach(c => c.classList.toggle("hidden", !R));
+  document.getElementById("lblRStore").classList.toggle("hidden", S.tab!=="reappro" || !R);
+  if(!R){ document.getElementById("tilesReappro").innerHTML = `<div class="card empty" style="grid-column:1/-1">Pas encore de calcul de réappro : lancer « Réappro mini/maxi » (action calcul) dans l'onglet Actions du dépôt GitHub.</div>`; return; }
   const r = R.resume, retard = R.lignes.filter(l=>l.commande_en_retard).length;
   document.getElementById("tilesReappro").innerHTML = `
     <div class="card tile hero"><div class="lbl">Montant proposé HT</div><div class="val">${eur0.format(r.montant_propose||0)}</div>

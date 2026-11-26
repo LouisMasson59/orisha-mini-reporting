@@ -57,6 +57,8 @@ def main():
                 for c in reappro.commander(client, code, day, now_iso, a.lignes_json, a.seuils_json, a.demande):
                     print(f"Commande {c.get('documentNo') or '-'} {c.get('fournisseur') or ''} : {c['etat']}"
                           + (f" — {str(c.get('detail'))[:400]}" if c.get("detail") else ""))
+        print(f"Terminé en {time.time() - t0:.1f} s ({client.calls} appels API)")
+        return  # meta.json (date de collecte des ventes) n'est pas touché par le réappro
 
     elif a.commande == "ventes":
         rf = refs.load(client)
