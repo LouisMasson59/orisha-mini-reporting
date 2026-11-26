@@ -104,6 +104,9 @@ class MockAPI:
     def get(self, path: str, p: dict) -> list:
         if path == "Product":
             return [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products] + FR.products()
+        if path == "Product/bySearchKey":
+            sk = p.get("productSearchKey")
+            return [x for x in FR.products() if x["searchKey"] == sk] or [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products if x["searchKey"] == sk]
         if path == "TaxRate":
             return FR.TAX_RATES
         if path == "BusinessPartner/bySearchKey":

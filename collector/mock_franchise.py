@@ -29,8 +29,8 @@ PRODUITS = {
     "CANAPE-DROIT-BEIGE": ("Fixed 3-Seater Sofa - Beige", "Furniture-LivingRoom-Sofas", 299.5, 326.455),
     "ARMOIRE-WHITE": ("2-Door Wardrobe - White", "Furniture-Bedroom-Storage", 149.5, 162.955),
     "LIT-DOUBLE-GREY": ("Double Bed with Headboard - Grey", "Furniture-Bedroom-Beds", 199.5, 217.455),
-    "COMMODE-WHITE": ("4-Drawer Chest - White", "Furniture-Bedroom-Storage", 89.5, 97.555),   # sans seuil : seuil automatique
-    "SOMMIER": ("Slatted Bed Base", "Furniture-Bedroom-Beds", 64.5, 70.305),                   # sans seuil, stock suffisant
+    "COMMODE-WHITE": ("4-Drawer Chest - White", "Furniture-Bedroom-Storage", 89.5, 97.555),   # en stock, sans seuil
+    "SOMMIER": ("Slatted Bed Base", "Furniture-Bedroom-Beds", 64.5, 70.305),                   # en stock, sans seuil
 }
 
 
@@ -53,8 +53,7 @@ PLAN = {
     "SUSPENSION-BLACK": ("M", _v(2, 2, 14, "M", 2)), "SUSPENSION-WHITE": ("M", _v(2, 2, 14, "M", 2)), "MIROIR-ROND": ("M", _v(2, 2, 14, "M", 2)),
     "COMMODE-WHITE": ("M", _v(1, 1, 14, "A")), "SOMMIER": ("M", _v(1, 1, 14, "A")),
 }
-# ventes simulées sur 30 jours (articles sans seuil manuel → seuils automatiques)
-VENTES_30J = {"COMMODE-WHITE": 6, "SOMMIER": 3, "COUSSIN-DECO-GREY": 9, "CHAISE-SCANDINAVE-GREY": 4}
+
 
 STOCK = {"COUSSIN-DECO-GREY": 4, "COUSSIN-DECO-BEIGE": 18, "COUSSIN-DECO-TERRACOTTA": 2, "TAPIS-DECO-160X230": 1,
          "SUSPENSION-BLACK": 3, "MIROIR-ROND": 5, "CHAISE-SCANDINAVE-GREY": 2, "CHAISE-SCANDINAVE-BLACK": 8,
@@ -103,12 +102,6 @@ def orders(created: list) -> list:
                     "documentType": "Purchase Order", "isSale": False, "docStatus": "CO", "businessPartner": bp, "organization": "0011",
                     "lines": [{"id": f"{doc}-{i}", "lineNo": (i + 1) * 10, "product": sk, "product_info": {"searchKey": sk, "name": PRODUITS[sk][0]},
                                "orderedQuantity": q, "deliveredQuantity": 0, "netUnitPrice": p} for i, (sk, q, p) in enumerate(ls)]})
-    for sk, n in VENTES_30J.items():  # tickets de caisse : 1 article par ticket, étalés sur 30 jours
-        for i in range(n):
-            d = t - timedelta(days=1 + (i * 29) // max(1, n))
-            out.append({"id": f"POS-{sk}-{i}", "documentNo": f"0011-POS-{sk[:6]}-{i}", "orderDate": d.isoformat(), "documentType": "POS Order",
-                        "isSale": True, "organization": "0011",
-                        "lines": [{"lineNo": 10, "product": sk, "product_info": {"searchKey": sk, "name": PRODUITS[sk][0]}, "orderedQuantity": 1}]})
     for po in created:  # commandes importées pendant l'exécution (ImportService simulé)
         out.append({"id": po["documentNo"], "documentNo": po["documentNo"], "orderDate": po["orderDate"],
                     "scheduledDeliveryDate": po.get("scheduledDeliveryDate"), "documentType": "Purchase Order", "isSale": False,

@@ -5,7 +5,11 @@ Calcul (par magasin) :
   si disponible < mini  →  besoin = maxi − disponible, arrondi au colisage du fournisseur
                             (quantité minimale de commande, multiple) lu dans l'onglet Purchasing d'Openbravo.
 Les seuils (mini, maxi, fournisseur imposé) viennent de collector/seuils/<magasin>.csv
-ou du Google Sheet (passés en JSON par le workflow).
+(téléversé depuis le tableau de bord). Seuls les articles de ce fichier sont suivis.
+
+Volumétrie : aucune lecture du catalogue complet. Le statut de chaque article se calcule avec le stock du magasin
+et les commandes en cours ; les fiches article (onglet Purchasing) ne sont lues, une par une, que pour les
+articles à commander ou couverts. Le fichier de propositions ne contient que ces exceptions.
 
 Commande : les lignes validées sont regroupées par fournisseur et importées dans Openbravo
 (ImportService/PurchaseOrder → commande au statut « Booked »).
@@ -46,13 +50,16 @@ def lire_seuils(code: str, seuils_json: str | None = None) -> dict:
         f = SEUILS_DIR / f"{code}.csv"
         if not f.exists():
             raise SystemExit(f"Pas de seuils pour {code} : créer {f.relative_to(SEUILS_DIR.parents[1])}")
-        rows = list(csv.DictReader(f.read_text(encoding="utf-8-sig").splitlines(), delimiter=";"))
+        txt = f.read_text(encoding="utf-8-sig")
+        first = txt.split("\n", 1)[0]
+        rows = list(csv.DictReader(txt.splitlines(), delimiter=";" if first.count(";") >= first.count(",") else ","))
+        rows = [{str(k or "").strip().lower(): v for k, v in r.items()} for r in rows]
     out = {}
     for r in rows:
-        sk = str(r.get("produit") or r.get("sk") or "").strip()
+        sk = str(r.get("produit") or r.get("sk") or r.get("code") or "").strip()
         if not sk or sk.startswith("#"):
             continue
-        mini, maxi = num(r.get("mini")), num(r.get("maxi"))
+        mini, maxi = (num(str(r.get(k) or "").replace(",", ".")) for k in ("mini", "maxi"))
         out[sk] = {"mini": mini, "maxi": max(mini, maxi), "fournisseur": (str(r.get("fournisseur") or "").strip() or None)}
     return out
 
@@ -104,22 +111,10 @@ def commandes_magasin(client, org: str, day: date, n_days: int) -> list:
     return out
 
 
-def ventes_par_article(refs: dict, orders: list, day: date, n_days: int) -> dict:
-    """Quantités vendues (nettes des retours) par article sur les n derniers jours."""
-    d0, qty = day - timedelta(days=n_days), defaultdict(float)
-    for o in orders:
-        if is_purchase(o) or is_excluded(o) or str(o.get("orderDate") or "")[:10] < d0.isoformat():
-            continue
-        for l in o.get("lines") or []:
-            if l.get("isDeleted") is not True:
-                qty[R.sk_of(refs, l)] += num(l.get("orderedQuantity"))
-    return qty
-
-
 def commandes_ouvertes(client, refs: dict, orders: list, day: date, adresses: dict | None = None) -> tuple[dict, list]:
     """Reste à recevoir par article (commandes fournisseurs du magasin) + numéros de documents existants.
     `adresses` (optionnel) est complété avec l'adresse fournisseur des commandes existantes."""
-    d0 = day - timedelta(days=int(RC.get("historique_commandes_j", 180)))
+    d0 = day - timedelta(days=int(RC.get("historique_commandes_j", 90)))
     pos = [o for o in orders if is_purchase(o)]
     pos = list({(o.get("id") or o.get("documentNo")): o for o in pos}.values())
     docs = [o.get("documentNo") for o in pos if o.get("documentNo")]
@@ -160,7 +155,21 @@ def commandes_ouvertes(client, refs: dict, orders: list, day: date, adresses: di
 
 
 def produits(client, sks: set) -> dict:
-    return {p.get("searchKey"): p for p in client.get("Product") if p.get("searchKey") in sks}
+    """Fiches article (avec onglet Purchasing) des seuls articles demandés : un appel par article,
+    ou l'export complet si la liste dépasse reappro.max_lectures_articles."""
+    sks = {s for s in sks if s}
+    if len(sks) > int(RC.get("max_lectures_articles", 1500)):
+        return {p.get("searchKey"): p for p in client.get("Product") if p.get("searchKey") in sks}
+    out = {}
+    for sk in sorted(sks):
+        try:
+            found = client.get("Product/bySearchKey", {"productSearchKey": sk})
+        except SystemExit:
+            found = []
+        p = next((x for x in found if x.get("searchKey") == sk), None)
+        if p:
+            out[sk] = p
+    return out
 
 
 def ligne_achat(prod: dict | None, fournisseur: str | None):
@@ -201,64 +210,57 @@ def _actives(prod: dict | None) -> list:
 def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None = None, demande: str | None = None) -> dict:
     m = magasin(code)
     refs = R.load(client)
-    manuels = lire_seuils(code, seuils_json)
-    auto = {**{"actif": True, "fenetre_ventes_j": 30, "securite_j": 7, "couverture_j": 21}, **(RC.get("seuils_auto") or {}), **(m.get("seuils_auto") or {})}
+    seuils = lire_seuils(code, seuils_json)
     org = org_name(client, m)
     stock, names = stock_magasin(client, refs, m)
-    orders = commandes_magasin(client, org, day, max(int(RC.get("historique_commandes_j", 180)), int(auto["fenetre_ventes_j"])))
+    orders = commandes_magasin(client, org, day, int(RC.get("historique_commandes_j", 90)))
     ouvert, _docs = commandes_ouvertes(client, refs, orders, day)
-    ventes = ventes_par_article(refs, orders, day, int(auto["fenetre_ventes_j"])) if auto["actif"] else {}
-    suivis = set(manuels) | {sk for sk, q in ventes.items() if q > 0}
-    prods = produits(client, suivis)
-    fournisseurs, couts = refs.get("fournisseurs", {}), refs.get("couts", {})
-    cats = refs.get("categories", {})
-    lignes, anomalies = [], []
-    for sk in sorted(suivis):
-        prod = prods.get(sk)
-        nom = R.product_name(refs, sk, names.get(sk) or (prod or {}).get("name"))
+    fournisseurs, couts, cats = refs.get("fournisseurs", {}), refs.get("couts", {}), refs.get("categories", {})
+
+    # 1re passe : statut de chaque article suivi (stock + reste à recevoir vs seuils) — sans lire les fiches article
+    statuts = {}
+    for sk, s in seuils.items():
+        st, oc = stock.get(sk, 0.0), ouvert.get(sk, {"qte": 0.0})
+        dispo = st + oc["qte"]
+        statuts[sk] = "a_commander" if s["mini"] > 0 and dispo < s["mini"] else "couvert" if s["mini"] > 0 and st < s["mini"] else "ok"
+    exceptions = [sk for sk, x in statuts.items() if x != "ok"]
+
+    # 2e passe : fiches article (Purchasing) des seules exceptions
+    prods = produits(client, set(exceptions))
+    lignes, ok_lignes, anomalies = [], [], []
+    for sk, s in seuils.items():
         st, oc = stock.get(sk, 0.0), ouvert.get(sk, {"qte": 0.0, "retard": False, "docs": []})
         dispo = st + oc["qte"]
-        alts = [_alternative(l, fournisseurs, couts.get(sk, 0.0)) for l in _actives(prod)]
-        alts.sort(key=lambda a: (not a["habituel"], a["prix"] or 0))
-        s = manuels.get(sk)
-        impose = s["fournisseur"] if s else None
-        la = ligne_achat(prod, impose)
-        vj = max(0.0, ventes.get(sk, 0.0)) / max(1, int(auto["fenetre_ventes_j"]))
-        if s:
-            mini, maxi, source = s["mini"], s["maxi"], "manuel"
-        else:  # seuil automatique : couverture du délai fournisseur + sécurité, puis couverture cible
-            delai = (_alternative(la, fournisseurs, 0)["delai_j"] if la else int(RC.get("delai_defaut_j", 7)))
-            mini = math.ceil(vj * (delai + num(auto["securite_j"])))
-            maxi = mini + math.ceil(vj * num(auto["couverture_j"]))
-            source = "auto"
-        cat = (prod or {}).get("productCategory") or (refs.get("produits", {}).get(sk) or {}).get("cat")
-        row = {"sk": sk, "nom": nom, "famille": (cats.get(cat) or {}).get("nom") or cat or "Non classé", "secteur": R.sector(refs, sk, cat),
-               "stock": r2(st), "en_commande": r2(oc["qte"]), "commande_en_retard": oc["retard"], "commandes": oc["docs"],
-               "disponible": r2(dispo), "ventes_j": r2(vj), "mini": r2(mini), "maxi": r2(maxi), "source_seuil": source,
-               "rupture": st <= 0, "besoin": 0, "qte_proposee": 0, "fournisseur": None, "fournisseur_nom": None,
-               "minimum_cde": None, "multiple": None, "delai_j": None, "livraison_prevue": None, "prix": None, "montant": 0,
-               "alternatives": alts}
+        cat = (refs.get("produits", {}).get(sk) or {}).get("cat")
+        base = {"sk": sk, "nom": R.product_name(refs, sk, names.get(sk)), "famille": (cats.get(cat) or {}).get("nom") or cat or "Non classé",
+                "stock": r2(st), "en_commande": r2(oc["qte"]), "disponible": r2(dispo), "mini": r2(s["mini"]), "maxi": r2(s["maxi"]),
+                "rupture": st <= 0, "statut": statuts[sk]}
+        if statuts[sk] == "ok":
+            ok_lignes.append(base)
+            continue
+        prod = prods.get(sk)
+        alts = sorted((_alternative(l, fournisseurs, couts.get(sk, 0.0)) for l in _actives(prod)), key=lambda a: (not a["habituel"], a["prix"] or 0))
+        la = ligne_achat(prod, s["fournisseur"])
+        row = {**base, "nom": R.product_name(refs, sk, names.get(sk) or (prod or {}).get("name")),
+               "commande_en_retard": oc["retard"], "commandes": oc["docs"], "besoin": 0, "qte_proposee": 0,
+               "fournisseur": None, "fournisseur_nom": None, "minimum_cde": None, "multiple": None, "delai_j": None,
+               "livraison_prevue": None, "prix": None, "montant": 0, "alternatives": alts}
         if prod is None:
             anomalies.append(f"{sk} : article introuvable dans Openbravo")
         elif la is None:
-            anomalies.append(f"{sk} : fournisseur {impose or 'habituel'} absent de l'onglet Purchasing")
+            anomalies.append(f"{sk} : fournisseur {s['fournisseur'] or 'habituel'} absent de l'onglet Purchasing")
         if la:
             a = _alternative(la, fournisseurs, couts.get(sk, 0.0))
             row.update({"fournisseur": a["fournisseur"], "fournisseur_nom": a["nom"], "delai_j": a["delai_j"], "prix": a["prix"],
                         "minimum_cde": a["minimum_cde"], "multiple": a["multiple"]})
-        if mini > 0 and dispo < mini:
-            row["statut"] = "a_commander"
-            row["besoin"] = r2(maxi - dispo)
+        if statuts[sk] == "a_commander":
+            row["besoin"] = r2(s["maxi"] - dispo)
             if la:
-                q, _, _ = arrondir(maxi - dispo, la)
+                q, _, _ = arrondir(s["maxi"] - dispo, la)
                 row.update({"qte_proposee": r2(q), "livraison_prevue": (day + timedelta(days=row["delai_j"])).isoformat(),
                             "montant": r2(q * (row["prix"] or 0))})
-        elif mini > 0 and st < mini:
-            row["statut"] = "couvert"  # sous le mini physiquement, mais une commande en cours couvre le besoin
-        else:
-            row["statut"] = "ok"
         lignes.append(row)
-    ordre = {"a_commander": 0, "couvert": 1, "ok": 2}
+    ordre = {"a_commander": 0, "couvert": 1}
     lignes.sort(key=lambda r: (ordre[r["statut"]], r["fournisseur"] or "", r["sk"]))
     groupes = defaultdict(lambda: {"lignes": 0, "qte": 0.0, "montant": 0.0, "livraison_prevue": None})
     for r in lignes:
@@ -268,19 +270,20 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
             g["qte"] += r["qte_proposee"]
             g["montant"] += r["montant"]
             g["livraison_prevue"] = max(filter(None, [g["livraison_prevue"], r["livraison_prevue"]]))
-    sans_seuil = sum(1 for sk, q in stock.items() if q > 0 and sk not in suivis)
+    max_ok = int(RC.get("max_lignes_ok", 5000))
     res = {"date": day.isoformat(), "maj": now_iso, "source": client.source, "demande": demande,
            "magasin": {"code": code, "label": m.get("label", code), "organisation": org, "entrepot": m["warehouse"]},
-           "regle": ("Commande si disponible (stock + reste à recevoir) < mini ; quantité = maxi − disponible, arrondie au colisage fournisseur. "
-                     f"Seuils manuels (fichier / Sheet) ou automatiques : mini = ventes/jour × (délai + {num(auto['securite_j']):g} j), "
-                     f"maxi = mini + ventes/jour × {num(auto['couverture_j']):g} j (ventes des {int(auto['fenetre_ventes_j'])} derniers jours)."),
-           "resume": {"articles_suivis": len(lignes), "a_commander": sum(r["statut"] == "a_commander" for r in lignes),
-                      "couverts": sum(r["statut"] == "couvert" for r in lignes), "ruptures": sum(r["rupture"] for r in lignes),
-                      "seuils_manuels": sum(r["source_seuil"] == "manuel" for r in lignes), "seuils_auto": sum(r["source_seuil"] == "auto" for r in lignes),
-                      "en_stock_sans_seuil": sans_seuil, "montant_propose": r2(sum(g["montant"] for g in groupes.values()))},
+           "regle": "Commande si disponible (stock + reste à recevoir) < mini ; quantité = maxi − disponible, arrondie au colisage fournisseur (onglet Purchasing).",
+           "resume": {"articles_suivis": len(seuils), "a_commander": sum(r["statut"] == "a_commander" for r in lignes),
+                      "couverts": sum(r["statut"] == "couvert" for r in lignes), "ok": len(ok_lignes),
+                      "ruptures": sum(1 for sk in seuils if stock.get(sk, 0.0) <= 0),
+                      "en_stock_sans_seuil": sum(1 for sk, q in stock.items() if q > 0 and sk not in seuils),
+                      "fiches_lues": len(prods), "montant_propose": r2(sum(g["montant"] for g in groupes.values()))},
            "commandes_proposees": [{"fournisseur": k, "fournisseur_nom": fournisseurs.get(k) or k, **{x: r2(v) if isinstance(v, float) else v for x, v in g.items()}}
                                    for k, g in sorted(groupes.items())],
-           "lignes": lignes, "anomalies": anomalies}
+           "lignes": lignes,
+           "lignes_ok": ok_lignes if len(ok_lignes) <= max_ok else None,  # au-delà : seulement le nombre (fichier léger)
+           "anomalies": anomalies}
     save_json(f"reappro/{code}.json", res)
     idx = [x for x in (load_json("reappro/index.json", []) or []) if x.get("code") != code]
     save_json("reappro/index.json", sorted(idx + [{"code": code, "label": m.get("label", code)}], key=lambda x: x["code"]))
@@ -343,7 +346,7 @@ def commander(client, code: str, day: date, now_iso: str, lignes_json: str | Non
     """Crée dans Openbravo les commandes des lignes validées (toutes les propositions si aucune liste)."""
     m = magasin(code)
     prop = calculer(client, code, day, now_iso, seuils_json, demande)  # données fraîches avant de commander
-    ref = {r["sk"]: r for r in prop["lignes"]}
+    ref = {r["sk"]: r for r in prop["lignes"] + (prop.get("lignes_ok") or [])}
     if lignes_json:
         demandees = [{"sk": str(x.get("produit") or x.get("sk")), "qte": num(x.get("qte")), "fournisseur": x.get("fournisseur") or None}
                      for x in json.loads(lignes_json)]
@@ -369,7 +372,7 @@ def commander(client, code: str, day: date, now_iso: str, lignes_json: str | Non
         par_fournisseur[_key(la.get("businessPartner"))].append({**d, "ligne": la, "taxe": taxes[cat]})
     journal = load_json("reappro/commandes.json", []) or []
     adresses_cdes = {}
-    orders = commandes_magasin(client, prop["magasin"]["organisation"], day, int(RC.get("historique_commandes_j", 180)))
+    orders = commandes_magasin(client, prop["magasin"]["organisation"], day, int(RC.get("historique_commandes_j", 90)))
     _, existants = commandes_ouvertes(client, refs, orders, day, adresses_cdes)
     prefixe = m.get("prefixe_commande", f"{m['code']}-PO-")
     n = _prochain_numero(prefixe, existants + [c.get("documentNo") for c in journal if c.get("etat") == "ok"])

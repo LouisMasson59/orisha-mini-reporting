@@ -98,7 +98,7 @@
       ]
     },
     "delai_defaut_j": 7,
-    "historique_commandes_j": 180,
+    "historique_commandes_j": 90,
     "fournisseurs": {
       "SUP-CENTRALE": {
         "adresse": "1 avenue de la Logistique"
@@ -107,11 +107,7 @@
         "adresse": "9 rue du Mobilier"
       }
     },
-    "seuils_auto": {
-      "actif": true,
-      "fenetre_ventes_j": 30,
-      "securite_j": 7,
-      "couverture_j": 21
-    }
+    "max_lectures_articles": 1500,
+    "max_lignes_ok": 5000
   }
 }

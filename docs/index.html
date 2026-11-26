@@ -155,6 +155,9 @@
       <div id="rRun" class="maj"></div>
       <div class="tb-right">
         <span id="ghState" class="maj"></span>
+        <button class="btn ghost" id="btnDlSeuils" title="Télécharger le fichier de seuils actuel">⤓ Seuils</button>
+        <button class="btn ghost" id="btnUpSeuils" title="Remplacer les seuils par un fichier CSV (produit;mini;maxi;fournisseur)">⤒ Importer des seuils</button>
+        <input type="file" id="fileSeuils" accept=".csv,text/csv" class="hidden">
         <button class="btn ghost" id="btnCalc">↻ Recalculer</button>
         <button class="btn primary" id="btnCmd" disabled>Commander la sélection</button>
       </div>
@@ -171,7 +174,6 @@
         </span>
         <label>Fournisseur <select id="fFour"></select></label>
         <label>Famille <select id="fFam"></select></label>
-        <label>Seuil <select id="fSeuil"><option value="">Tous</option><option value="manuel">Manuel</option><option value="auto">Automatique</option></select></label>
         <label><input type="checkbox" id="fRupt"> Ruptures</label>
         <label><input type="checkbox" id="fRetard"> Commande en retard</label>
         <label><input type="checkbox" id="fSel"> Sélectionnés</label>
@@ -187,7 +189,7 @@
       <ol>
         <li>GitHub › Settings › Developer settings › <b>Fine-grained tokens</b> › Generate new token</li>
         <li>Repository access : <b>Only select repositories</b> › <span id="ghRepoName"></span></li>
-        <li>Permissions : <b>Actions : Read and write</b>, <b>Contents : Read-only</b></li>
+        <li>Permissions : <b>Actions : Read and write</b>, <b>Contents : Read and write</b> (import des seuils)</li>
       </ol>
       <input type="password" id="ghTok" placeholder="github_pat_…" style="width:100%">
       <div class="dlg-btns"><button class="btn ghost" id="ghOff">Déconnecter</button><button class="btn ghost" id="ghCancel">Annuler</button><button class="btn primary" id="ghOk">Enregistrer</button></div>
@@ -417,7 +419,8 @@ async function loadAll(first){
 }
 // ------------------------------------------------------------------ RÉAPPRO
 const RSTAT = {a_commander:["crit","À commander"], couvert:["warn","Couvert"], ok:["good","OK"]};
-const RF = {statut:new Set(["a_commander","couvert"]), four:"", fam:"", seuil:"", rupt:false, retard:false, sel:false, txt:"", limit:100};
+const RF = {statut:new Set(["a_commander","couvert"]), four:"", fam:"", rupt:false, retard:false, sel:false, txt:"", limit:100};
+const allLines = R => R ? R.lignes.concat(R.lignes_ok||[]) : [];
 const GH = (() => { // dépôt GitHub : déduit de l'URL GitHub Pages (<owner>.github.io/<repo>/), sinon valeur par défaut
   const h = location.hostname, seg = location.pathname.split("/").filter(Boolean);
   return h.endsWith(".github.io") && seg.length ? {owner:h.split(".")[0], repo:seg[0]} : {owner:"LouisMasson59", repo:"orisha-mini-reporting"};
@@ -446,7 +449,7 @@ function altOf(l, sup){ return (l.alternatives||[]).find(a=>a.fournisseur===sup)
 function roundQ(besoin, a){ if(!a) return Math.max(0, Math.ceil(besoin)); const m = a.multiple||1; return Math.ceil(Math.max(besoin, a.minimum_cde||0)/m - 1e-9)*m; }
 function initSelection(R){
   S.sel = {};
-  R.lignes.forEach(l => S.sel[l.sk] = {on: l.statut==="a_commander" && l.qte_proposee>0, qte: l.qte_proposee||0, four: l.fournisseur, edited:false});
+  allLines(R).forEach(l => S.sel[l.sk] = {on: l.statut==="a_commander" && l.qte_proposee>0, qte: l.qte_proposee||0, four: l.fournisseur||null, edited:false});
 }
 function lineCalc(l){
   const s = S.sel[l.sk], a = altOf(l, s.four);
@@ -454,11 +457,11 @@ function lineCalc(l){
   return {s, a, prix, montant: (s.qte||0)*(prix||0), liv: a ? addDays(S.reappro.date, a.delai_j) : null,
           warn: a && s.qte>0 && (s.qte < (a.minimum_cde||0) || Math.abs(s.qte/(a.multiple||1) - Math.round(s.qte/(a.multiple||1))) > 1e-9)};
 }
-function selection(){ return S.reappro ? S.reappro.lignes.filter(l => S.sel[l.sk] && S.sel[l.sk].on && S.sel[l.sk].qte>0) : []; }
+function selection(){ return allLines(S.reappro).filter(l => S.sel[l.sk] && S.sel[l.sk].on && S.sel[l.sk].qte>0); }
 function filtered(){
   const t = RF.txt.trim().toLowerCase();
-  return S.reappro.lignes.filter(l => RF.statut.has(l.statut)
-    && (!RF.four || (S.sel[l.sk]||{}).four===RF.four) && (!RF.fam || l.famille===RF.fam) && (!RF.seuil || l.source_seuil===RF.seuil)
+  return allLines(S.reappro).filter(l => RF.statut.has(l.statut)
+    && (!RF.four || (S.sel[l.sk]||{}).four===RF.four) && (!RF.fam || l.famille===RF.fam)
     && (!RF.rupt || l.rupture) && (!RF.retard || l.commande_en_retard) && (!RF.sel || (S.sel[l.sk]||{}).on)
     && (!t || (l.nom+" "+l.sk).toLowerCase().includes(t)));
 }
@@ -472,7 +475,7 @@ function renderReappro(){
   document.getElementById("tilesReappro").innerHTML = `
     <div class="card tile hero"><div class="lbl">Sélection à commander HT</div><div class="val">${eur0.format(tot)}</div>
       <div class="delta">${sel.length} ligne(s) · proposition initiale ${eur0.format(r.montant_propose||0)} · calcul du ${new Date(R.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}</div></div>
-    <div class="card tile"><div class="lbl">Articles à commander</div><div class="val">${r.a_commander}</div><div class="delta">sur ${n0.format(r.articles_suivis)} suivis (${n0.format(r.seuils_manuels??r.articles_suivis)} seuils manuels · ${n0.format(r.seuils_auto||0)} auto)</div></div>
+    <div class="card tile"><div class="lbl">Articles à commander</div><div class="val">${r.a_commander}</div><div class="delta">sur ${n0.format(r.articles_suivis)} articles avec seuil</div></div>
     <div class="card tile"><div class="lbl">Ruptures</div><div class="val" style="color:${r.ruptures?'var(--crit)':'inherit'}">${r.ruptures}</div><div class="delta">stock nul en magasin${r.en_stock_sans_seuil?` · ${n0.format(r.en_stock_sans_seuil)} en stock sans seuil`:""}</div></div>
     <div class="card tile"><div class="lbl">Couverts par une commande</div><div class="val">${r.couverts}</div><div class="delta">${retard ? `<b class="down">dont ${retard} en retard</b>` : "aucune en retard"}</div></div>`;
   document.getElementById("regle").textContent = R.regle;
@@ -488,11 +491,13 @@ function renderReappro(){
   btn.disabled = !sel.length || S.running; btn.textContent = sel.length ? `Commander la sélection (${gk.length} cde · ${eur0.format(tot)})` : "Commander la sélection";
   document.getElementById("btnCalc").disabled = !!S.running;
   // filtres
-  const cnt = {a_commander:0, couvert:0, ok:0}; R.lignes.forEach(l=>cnt[l.statut]++);
-  document.querySelectorAll("#fStatut .chip").forEach(c => { c.classList.toggle("on", RF.statut.has(c.dataset.v)); c.querySelector("b").textContent = n0.format(cnt[c.dataset.v]); });
-  const fours = [...new Map(R.lignes.flatMap(l=>l.alternatives||[]).map(a=>[a.fournisseur,a.nom])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+  const cnt = {a_commander:r.a_commander, couvert:r.couverts, ok:r.ok ?? (R.lignes_ok||[]).length};
+  const okDispo = !!R.lignes_ok; if(!okDispo) RF.statut.delete("ok");
+  document.querySelectorAll("#fStatut .chip").forEach(c => { c.classList.toggle("on", RF.statut.has(c.dataset.v)); c.querySelector("b").textContent = n0.format(cnt[c.dataset.v]);
+    if(c.dataset.v==="ok"){ c.disabled = !okDispo; c.title = okDispo ? "" : "Trop d'articles OK pour les afficher : seules les exceptions sont chargées"; } });
+  const fours = [...new Map(allLines(R).flatMap(l=>l.alternatives||[]).map(a=>[a.fournisseur,a.nom])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
   document.getElementById("fFour").innerHTML = `<option value="">Tous</option>` + fours.map(([k,n])=>`<option value="${esc(k)}" ${k===RF.four?"selected":""}>${esc(n)}</option>`).join("");
-  const fams = [...new Set(R.lignes.map(l=>l.famille))].sort();
+  const fams = [...new Set(allLines(R).map(l=>l.famille))].sort();
   document.getElementById("fFam").innerHTML = `<option value="">Toutes</option>` + fams.map(f=>`<option ${f===RF.fam?"selected":""}>${esc(f)}</option>`).join("");
   renderGrid();
   document.getElementById("anomalies").innerHTML = (R.anomalies||[]).length ? `<details><summary>${R.anomalies.length} anomalie(s)</summary>${R.anomalies.map(a=>`<div>${esc(a)}</div>`).join("")}</details>` : "";
@@ -502,21 +507,20 @@ function renderGrid(){
   const rows = filtered(), shown = rows.slice(0, RF.limit);
   const cmdTxt = l => (l.commandes||[]).map(c=>`${esc(c.doc)} · ${n0.format(c.qte)} le ${c.date_prevue?shortDate(c.date_prevue):"?"}${c.retard?' <span class="st crit">retard</span>':''}`).join("<br>");
   const allOn = shown.length && shown.every(l=>S.sel[l.sk].on);
-  document.getElementById("propLignes").innerHTML = rows.length ? `<table><tr><th><input type="checkbox" id="selAll" ${allOn?"checked":""} title="Tout cocher (lignes affichées)"></th><th>Statut</th><th>Article</th><th class="n">Stock</th><th class="n">En commande</th><th class="n">Ventes / j</th><th class="n">Mini / Maxi</th><th>Fournisseur</th><th class="n">Qté</th><th class="n">Livraison</th><th class="n">Montant HT</th></tr>${
+  document.getElementById("propLignes").innerHTML = rows.length ? `<table><tr><th><input type="checkbox" id="selAll" ${allOn?"checked":""} title="Tout cocher (lignes affichées)"></th><th>Statut</th><th>Article</th><th class="n">Stock</th><th class="n">En commande</th><th class="n">Mini / Maxi</th><th>Fournisseur</th><th class="n">Qté</th><th class="n">Livraison</th><th class="n">Montant HT</th></tr>${
     shown.map(l=>{ const [c,t] = RSTAT[l.statut], k = lineCalc(l), alts = l.alternatives||[];
       return `<tr data-sk="${esc(l.sk)}" class="${k.s.on?'sel':''}"><td><input type="checkbox" class="rOn" ${k.s.on?"checked":""}></td>
         <td><span class="st ${c}">${t}</span></td><td>${esc(l.nom)}<div class="maj">${esc(l.sk)} · ${esc(l.famille)}</div></td>
         <td class="n" style="${l.rupture?'color:var(--crit);font-weight:600':''}">${n0.format(l.stock)}</td>
         <td class="n">${l.en_commande?`${n0.format(l.en_commande)}<div class="maj">${cmdTxt(l)}</div>`:"–"}</td>
-        <td class="n">${l.ventes_j?n1.format(l.ventes_j):"–"}</td>
-        <td class="n">${n0.format(l.mini)} / ${n0.format(l.maxi)}${l.source_seuil==="auto"?'<span class="tag" title="Seuil calculé sur les ventes">auto</span>':""}</td>
-        <td>${alts.length ? `<select class="rFour">${alts.map(a=>`<option value="${esc(a.fournisseur)}" ${a.fournisseur===k.s.four?"selected":""}>${esc(a.nom)}${a.habituel?" ★":""} · ${eur2.format(a.prix||0)} · ${a.delai_j} j</option>`).join("")}</select>` : "–"}
+        <td class="n">${n0.format(l.mini)} / ${n0.format(l.maxi)}</td>
+        <td>${alts.length ? `<select class="rFour">${alts.map(a=>`<option value="${esc(a.fournisseur)}" ${a.fournisseur===k.s.four?"selected":""}>${esc(a.nom)}${a.habituel?" ★":""} · ${eur2.format(a.prix||0)} · ${a.delai_j} j</option>`).join("")}</select>` : `<span class="maj">${l.statut==="ok" ? "Fournisseur habituel (prix à la commande)" : "–"}</span>`}
           ${k.a?`<div class="maj">${[k.a.minimum_cde>1?`min ${n0.format(k.a.minimum_cde)}`:"", k.a.multiple>1?`par ${n0.format(k.a.multiple)}`:"", l.besoin?`besoin ${n0.format(l.besoin)}`:""].filter(Boolean).join(" · ")}</div>`:""}</td>
         <td class="n"><input type="number" min="0" step="${(k.a&&k.a.multiple)||1}" class="rQte ${k.warn?'warnq':''}" value="${k.s.qte||0}" ${k.warn?'title="Ne respecte pas le colisage du fournisseur"':''}></td>
         <td class="n">${k.s.qte>0&&k.liv?shortDate(k.liv):"–"}</td><td class="n">${k.s.qte>0?eur2.format(k.montant):"–"}</td></tr>`; }).join("")}</table>`
     : `<div class="empty">Aucun article ne correspond aux filtres.</div>`;
   document.getElementById("propMore").innerHTML = rows.length > RF.limit ? `<div style="text-align:center;margin-top:10px"><button class="btn ghost" id="btnMore">Afficher plus (${n0.format(rows.length - RF.limit)} restants)</button></div>`
-    : rows.length ? `<div class="maj" style="margin-top:6px">${n0.format(rows.length)} article(s) affiché(s) sur ${n0.format(S.reappro.lignes.length)}</div>` : "";
+    : rows.length ? `<div class="maj" style="margin-top:6px">${n0.format(rows.length)} article(s) affiché(s) sur ${n0.format(S.reappro.resume.articles_suivis)} avec seuil</div>` : "";
 }
 function renderCmds(){
   const cmds = (S.cmds||[]).filter(c=>c.magasin===S.rstore).slice(-15).reverse();
@@ -538,7 +542,7 @@ const grid = document.getElementById("propLignes");
 grid.addEventListener("change", e => {
   if(e.target.id==="selAll"){ filtered().slice(0, RF.limit).forEach(l => { const s = S.sel[l.sk]; if(e.target.checked && !s.qte){ s.qte = roundQ(l.besoin||1, altOf(l, s.four)); } s.on = e.target.checked && s.qte>0; }); return renderReappro(); }
   const tr = e.target.closest("tr[data-sk]"); if(!tr) return;
-  const l = S.reappro.lignes.find(x=>x.sk===tr.dataset.sk), s = S.sel[l.sk];
+  const l = allLines(S.reappro).find(x=>x.sk===tr.dataset.sk), s = S.sel[l.sk];
   if(e.target.classList.contains("rOn")){ s.on = e.target.checked; if(s.on && !s.qte) s.qte = roundQ(l.besoin||1, altOf(l, s.four)); }
   if(e.target.classList.contains("rFour")){ s.four = e.target.value; if(!s.edited && (l.besoin||s.qte)) s.qte = roundQ(l.besoin||s.qte, altOf(l, s.four)); }
   if(e.target.classList.contains("rQte")){ s.qte = Math.max(0, Number(e.target.value)||0); s.edited = true; s.on = s.qte>0; }
@@ -546,7 +550,7 @@ grid.addEventListener("change", e => {
 });
 document.getElementById("propMore").addEventListener("click", e => { if(e.target.id==="btnMore"){ RF.limit += 100; renderGrid(); } });
 document.querySelectorAll("#fStatut .chip").forEach(c => c.onclick = () => { RF.statut.has(c.dataset.v) ? RF.statut.delete(c.dataset.v) : RF.statut.add(c.dataset.v); RF.limit = 100; renderReappro(); });
-[["fFour","four"],["fFam","fam"],["fSeuil","seuil"]].forEach(([id,k]) => document.getElementById(id).onchange = e => { RF[k] = e.target.value; RF.limit = 100; renderReappro(); });
+[["fFour","four"],["fFam","fam"]].forEach(([id,k]) => document.getElementById(id).onchange = e => { RF[k] = e.target.value; RF.limit = 100; renderReappro(); });
 [["fRupt","rupt"],["fRetard","retard"],["fSel","sel"]].forEach(([id,k]) => document.getElementById(id).onchange = e => { RF[k] = e.target.checked; RF.limit = 100; renderReappro(); });
 document.getElementById("fTxt").oninput = e => { RF.txt = e.target.value; RF.limit = 100; renderGrid(); };
 // ---- Recalculer / Commander : lancement du workflow GitHub puis suivi
@@ -584,6 +588,58 @@ async function launch(action, lignes){
   S.running = false; renderReappro();
 }
 document.getElementById("btnCalc").onclick = () => launch("calcul");
+// ---- seuils : export du fichier actuel, import d'un CSV (validé dans le navigateur puis enregistré dans le dépôt)
+const seuilsPath = () => `collector/seuils/${S.rstore}.csv`;
+function b64utf8(str){ const bytes = new TextEncoder().encode(str); let bin = ""; for(let i=0; i<bytes.length; i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000)); return btoa(bin); }
+function splitCsv(ln, sep){ const out = []; let cur = "", q = false;
+  for(const ch of ln){ if(ch === '"') q = !q; else if(ch === sep && !q){ out.push(cur); cur = ""; } else cur += ch; }
+  out.push(cur); return out.map(x=>x.trim()); }
+function parseSeuils(txt){
+  txt = txt.replace(/^\ufeff/, "");
+  const lines = txt.split(/\r?\n/).filter(x=>x.trim());
+  if(!lines.length) return {rows:[], errors:["fichier vide"]};
+  const sep = (lines[0].match(/;/g)||[]).length >= (lines[0].match(/,/g)||[]).length ? ";" : ",";
+  const head = splitCsv(lines[0], sep).map(h=>h.toLowerCase());
+  const col = names => head.findIndex(h => names.includes(h));
+  const ci = {sk:col(["produit","sk","code","article","searchkey"]), mini:col(["mini","min","minimum"]), maxi:col(["maxi","max","maximum"]), four:col(["fournisseur","supplier","vendor"])};
+  if(ci.sk<0 || ci.mini<0 || ci.maxi<0) return {rows:[], errors:["en-tête attendu : produit;mini;maxi;fournisseur (fournisseur facultatif)"]};
+  const rows = [], errors = [], seen = new Set();
+  const nb = v => Number(String(v??"").replace(",", ".").trim());
+  lines.slice(1).forEach((ln, i) => {
+    const c = splitCsv(ln, sep), sk = c[ci.sk], mi = nb(c[ci.mini]), ma = nb(c[ci.maxi]);
+    if(!sk) return;
+    if(seen.has(sk)){ errors.push(`ligne ${i+2} : ${sk} en double`); return; }
+    if(!isFinite(mi) || !isFinite(ma) || mi < 0 || ma < 0){ errors.push(`ligne ${i+2} : ${sk} mini/maxi invalide`); return; }
+    if(ma < mi){ errors.push(`ligne ${i+2} : ${sk} maxi < mini`); return; }
+    seen.add(sk); rows.push([sk, mi, ma, ci.four>=0 ? (c[ci.four]||"") : ""]);
+  });
+  return {rows, errors};
+}
+document.getElementById("btnDlSeuils").onclick = async () => {
+  if(!ghToken()) return openGh();
+  try {
+    const txt = await ghApi(`/contents/${seuilsPath()}?ref=main&t=${Date.now()}`, {headers:{"Accept":"application/vnd.github.raw+json"}}).catch(async e => { throw e; });
+    const blob = new Blob(["\ufeff" + (typeof txt === "string" ? txt : JSON.stringify(txt))], {type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `seuils_${S.rstore}.csv`; a.click();
+  } catch(err){ runMsg("ko", "Téléchargement impossible : " + esc(err.message||err)); }
+};
+document.getElementById("btnUpSeuils").onclick = () => { if(!ghToken()) return openGh(); document.getElementById("fileSeuils").click(); };
+document.getElementById("fileSeuils").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if(!f) return;
+  const {rows, errors} = parseSeuils(await f.text());
+  if(!rows.length){ runMsg("ko", "Fichier refusé : " + esc(errors.slice(0,3).join(" ; "))); return; }
+  const msg = `${n0.format(rows.length)} article(s) avec seuil` + (errors.length ? `, ${errors.length} ligne(s) ignorée(s) :\n- ${errors.slice(0,8).join("\n- ")}${errors.length>8?"\n…":""}` : "") +
+    `\n\nRemplacer les seuils du magasin ${S.rstore} puis recalculer ?`;
+  if(!confirm(msg)) return;
+  const csv = "produit;mini;maxi;fournisseur\n" + rows.map(r => r.join(";")).join("\n") + "\n";
+  try {
+    runMsg("run", "Enregistrement des seuils…");
+    let sha; try { sha = (await ghApi(`/contents/${seuilsPath()}?ref=main`)).sha; } catch(_) {}
+    await ghApi(`/contents/${seuilsPath()}`, {method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({message:`Seuils ${S.rstore} : ${rows.length} articles (import tableau de bord)`, content:b64utf8(csv), sha, branch:"main"})});
+    await launch("calcul");
+  } catch(err){ runMsg("ko", "Import impossible : " + esc(err.message||err) + (String(err.message).includes("403") ? " — le jeton doit avoir Contents : Read and write" : "")); }
+};
 document.getElementById("btnCmd").onclick = () => {
   const lignes = selection().map(l => ({produit:l.sk, qte:S.sel[l.sk].qte, fournisseur:S.sel[l.sk].four}));
   const nf = new Set(lignes.map(x=>x.fournisseur)).size;
