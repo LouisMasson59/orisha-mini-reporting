@@ -1,0 +1,64 @@
+name: Réappro mini/maxi (franchisé)
+# Lancement manuel (onglet Actions > Run workflow) ou par le Google Sheet (API workflow_dispatch).
+#   calcul   : met à jour docs/data/reappro/<magasin>.json (propositions)
+#   commande : crée dans Openbravo les commandes des lignes validées, puis recalcule
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "calcul ou commande"
+        type: choice
+        options: [calcul, commande]
+        default: calcul
+      magasin:
+        description: "Code magasin (config.json > reappro.magasins)"
+        default: "0011"
+      seuils_json:
+        description: "Seuils venant du Sheet (vide = collector/seuils/<magasin>.csv)"
+        required: false
+        default: ""
+      lignes_json:
+        description: "Lignes validées [{produit, qte, fournisseur}] (vide = toutes les propositions)"
+        required: false
+        default: ""
+      demande:
+        description: "Identifiant de la demande (renseigné par le Sheet)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+concurrency:
+  group: reappro-${{ inputs.magasin }}
+  cancel-in-progress: false
+jobs:
+  reappro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OB_URL: ${{ secrets.OB_URL }}
+      OB_USER: ${{ secrets.OB_USER }}
+      OB_PASSWORD: ${{ secrets.OB_PASSWORD }}
+      OB_MOCK: ${{ vars.OB_MOCK || '1' }}
+      SEUILS_JSON: ${{ inputs.seuils_json }}
+      LIGNES_JSON: ${{ inputs.lignes_json }}
+      DEMANDE: ${{ inputs.demande }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Réappro (${{ inputs.action }})
+        run: |
+          if [ "${{ inputs.action }}" = "commande" ]; then
+            python -m collector.run commande --magasin "${{ inputs.magasin }}"
+          else
+            python -m collector.run reappro --magasin "${{ inputs.magasin }}"
+          fi
+      - name: Enregistrer les données
+        run: |
+          git config user.name "reporting-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs/data/reappro
+          if git diff --cached --quiet; then echo "Aucune nouvelle donnée"; exit 0; fi
+          git commit -m "Réappro ${{ inputs.magasin }} : ${{ inputs.action }} $(TZ=Europe/Paris date +%F\ %H:%M)"
+          for i in 1 2 3 4 5; do git pull --rebase && git push && break; sleep 5; done
