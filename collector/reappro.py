@@ -84,13 +84,25 @@ def stock_magasin(client, refs: dict, m: dict) -> tuple[dict, dict]:
     return qty, names
 
 
-def commandes_ouvertes(client, refs: dict, org: str, day: date) -> tuple[dict, list]:
-    """Reste à recevoir par article (commandes fournisseurs du magasin) + numéros de documents existants."""
+def _adresse(loc) -> str | None:
+    if isinstance(loc, dict):
+        return loc.get("name") or loc.get("address")
+    return loc if isinstance(loc, str) and loc else None
+
+
+def commandes_ouvertes(client, refs: dict, org: str, day: date, adresses: dict | None = None) -> tuple[dict, list]:
+    """Reste à recevoir par article (commandes fournisseurs du magasin) + numéros de documents existants.
+    `adresses` (optionnel) est complété avec l'adresse fournisseur des commandes existantes."""
     d0 = day - timedelta(days=int(RC.get("historique_commandes_j", 180)))
     pos = client.get("Order/byOrgOrderDateRange", {"organization": org, "dateFrom": d0.isoformat(), "dateTo": (day + timedelta(days=1)).isoformat()})
     pos = [o for o in pos if is_purchase(o)]
     pos = list({(o.get("id") or o.get("documentNo")): o for o in pos}.values())
     docs = [o.get("documentNo") for o in pos if o.get("documentNo")]
+    if adresses is not None:
+        for o in sorted(pos, key=lambda o: str(o.get("orderDate") or "")):
+            a = _adresse(o.get("invoiceAddress")) or _adresse(o.get("shipmentAddress"))
+            if a:
+                adresses[_key(o.get("businessPartner"))] = a
     pos = [o for o in pos if not is_excluded(o) and str(o.get("docStatus") or "").upper() != "CL"]
     receipts = [g for g in client.get("ShipmentInOut/goodsReceiptByMovementDateRange", {"dateFrom": d0.isoformat(), "dateTo": (day + timedelta(days=1)).isoformat()})
                 if g.get("isSale") is not True and g.get("isReturn") is not True
@@ -227,17 +239,36 @@ def _taux_taxes(client) -> dict:
     return out
 
 
-def _fiche_fournisseur(client, sk: str) -> dict:
-    try:
-        bps = client.get("BusinessPartner/bySearchKey", {"businessPartnerSearchKey": sk})
-    except SystemExit:
-        bps = []
-    bp = bps[0] if bps else {}
-    locs = bp.get("locations") or []
+def _fiche_fournisseur(client, sk: str, adresses_cdes: dict) -> dict:
+    """Adresse fournisseur : fiche tiers (bySearchKey, puis liste des fournisseurs) > dernière commande > config."""
+    bp, trace = {}, []
+    for path, params in (("BusinessPartner/bySearchKey", {"businessPartnerSearchKey": sk}), ("BusinessPartner/byVendor", {"isVendor": "true"})):
+        try:
+            found = [b for b in client.get(path, params) if b.get("searchKey") == sk]
+        except SystemExit as e:
+            found, _ = [], trace.append(f"{path} : {str(e)[:120]}")
+        if found:
+            bp = found[0]
+            if bp.get("locations"):
+                break
+    locs = [l for l in bp.get("locations") or [] if isinstance(l, dict)]
     loc = next((l for l in locs if l.get("invoiceAddress")), locs[0] if locs else {})
-    return {"adresse": loc.get("name") or loc.get("address"),
+    conf = (RC.get("fournisseurs") or {}).get(sk) or {}
+    adresse = _adresse(loc) or adresses_cdes.get(sk) or conf.get("adresse")
+    if not adresse:
+        trace.append(f"fiche tiers {'trouvée' if bp else 'introuvable'}, champs : {sorted(bp)[:25]}, adresses : {len(locs)}")
+    return {"adresse": adresse, "trace": "; ".join(trace),
             "liste_prix": _key(bp.get("purchasePriceList")) or RC.get("liste_prix_achat", "Purchase Price List"),
             "paiement": _key(bp.get("poPaymentTerms")) or RC.get("conditions_paiement", "30 jours")}
+
+
+def _messages(rep) -> str:
+    """Messages d'erreur lisibles d'une réponse ImportService / StatusService."""
+    if not isinstance(rep, dict):
+        return ""
+    data = rep.get("data") if isinstance(rep.get("data"), dict) else {}
+    errs = (data.get("errors") or []) + (rep.get("errors") or [])
+    return "; ".join(str(e.get("message") or e.get("detail") or e.get("title")) for e in errs if isinstance(e, dict))
 
 
 def _prochain_numero(prefixe: str, existants: list) -> int:
@@ -275,12 +306,16 @@ def commander(client, code: str, day: date, now_iso: str, lignes_json: str | Non
             continue
         par_fournisseur[_key(la.get("businessPartner"))].append({**d, "ligne": la, "taxe": taxes[cat]})
     journal = load_json("reappro/commandes.json", []) or []
-    _, existants = commandes_ouvertes(client, refs, prop["magasin"]["organisation"], day)
+    adresses_cdes = {}
+    _, existants = commandes_ouvertes(client, refs, prop["magasin"]["organisation"], day, adresses_cdes)
     prefixe = m.get("prefixe_commande", f"{m['code']}-PO-")
-    n = _prochain_numero(prefixe, existants + [c.get("documentNo") for c in journal])
+    n = _prochain_numero(prefixe, existants + [c.get("documentNo") for c in journal if c.get("etat") == "ok"])
     resultats = []
     for sup, ls in sorted(par_fournisseur.items()):
-        fiche = _fiche_fournisseur(client, sup)
+        fiche = _fiche_fournisseur(client, sup, adresses_cdes)
+        if not fiche["adresse"]:
+            rejets.append(f"{sup} : adresse fournisseur introuvable (renseigner config.json > reappro.fournisseurs) — {fiche['trace']}")
+            continue
         doc = f"{prefixe}{n:04d}"
         n += 1
         lines, taxes_doc, net_t, tax_t, due_max = [], defaultdict(lambda: [0.0, 0.0]), 0.0, 0.0, day
@@ -310,6 +345,8 @@ def commander(client, code: str, day: date, now_iso: str, lignes_json: str | Non
               "lines": lines,
               "taxes": [{"lineNo": (i + 1) * 10, "tax": k, "taxableAmount": round(v[0], 2), "taxAmount": round(v[1], 2)} for i, (k, v) in enumerate(taxes_doc.items())]}
         res = client.import_and_wait("PurchaseOrder", [po])
+        if res["etat"] == "erreur":
+            res["reponse"] = _messages(res.get("reponse")) or res.get("reponse")
         resultats.append({"date": day.isoformat(), "maj": now_iso, "demande": demande, "magasin": code, "documentNo": doc,
                           "fournisseur": sup, "lignes": len(lines), "montant_ht": round(net_t, 2), "livraison_prevue": due_max.isoformat(),
                           "etat": res["etat"], "request": res.get("request"),

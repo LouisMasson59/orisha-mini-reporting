@@ -98,6 +98,14 @@
       ]
     },
     "delai_defaut_j": 7,
-    "historique_commandes_j": 180
+    "historique_commandes_j": 180,
+    "fournisseurs": {
+      "SUP-CENTRALE": {
+        "adresse": "1 avenue de la Logistique"
+      },
+      "SUP-MEUBLEDESIGN": {
+        "adresse": "9 rue du Mobilier"
+      }
+    }
   }
 }
