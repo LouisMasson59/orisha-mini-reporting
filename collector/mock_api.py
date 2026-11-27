@@ -150,7 +150,8 @@ class MockAPI:
             return [o for o in self._pos() if d1 <= parse_day(o["orderDate"]) <= d2]
         if path == "Stock":
             d = parse_day(p.get("_day", today().isoformat()))
-            return [dict(r, organization=self.stores[c].get("search_key", c)) for c in self.stores for r in self._stock(c, d)]
+            return ([dict(r, organization=self.stores[c].get("search_key", c)) for c in self.stores if c != FR.ORG["searchKey"] for r in self._stock(c, d)]
+                    + FR.stock())
         if path == "Stock/byWarehouse":
             return self._stock(self.by_wh.get(p["warehouse"]), parse_day(p.get("_day", today().isoformat())))
         if path == "ShipmentInOut/goodsReceiptByMovementDateRange":

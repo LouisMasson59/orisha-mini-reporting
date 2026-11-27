@@ -1,4 +1,6 @@
 """Référentiel : produits, catégories (→ secteur racine) et coûts. Rafraîchi chaque nuit."""
+from collections import defaultdict
+
 from .store import CONFIG, load_json, num, save_json, now_local
 
 
@@ -20,21 +22,44 @@ def build(client) -> dict:
             fournisseurs[bp.get("searchKey")] = bp.get("commercialName") or bp.get("fiscalName") or bp.get("name") or bp.get("searchKey")
     except SystemExit:
         pass
+    if not fournisseurs:  # repli : export complet des tiers, filtré sur les fournisseurs
+        try:
+            for bp in client.get("BusinessPartner"):
+                if bp.get("isVendor") or bp.get("vendor"):
+                    fournisseurs[bp.get("searchKey")] = bp.get("commercialName") or bp.get("fiscalName") or bp.get("name") or bp.get("searchKey")
+        except SystemExit:
+            pass
     noms = {p.get("name"): p.get("searchKey") for p in raw_prods if p.get("name")}  # noms maîtres (anglais), tels que renvoyés par Stock et réceptions
     noms.update({v["nom"]: k for k, v in prods.items() if v.get("nom") and v["nom"] not in noms})
     norm = lambda v: v if v in prods else noms.get(v, v)  # noqa: E731  (le champ product peut être un nom ou un search key)
-    couts = {}
+    # Coût unitaire, article par article : coût de la liste de vente, sinon prix de la liste d'achat,
+    # sinon prix d'achat du fournisseur habituel (onglet Purchasing de la fiche article).
+    couts, origine = {}, {}
     for pp in client.get("ProductPrice/byPriceList", {"priceList": CONFIG["sales_price_list"]}):
         if num(pp.get("cost")) > 0:
             couts[norm(pp.get("product"))] = num(pp.get("cost"))
-    source = "coût de la liste de vente"
-    if not couts and CONFIG.get("cost_price_list"):
-        # repli : prix d'achat HT de la liste d'achat comme coût
-        for pp in client.get("ProductPrice/byPriceList", {"priceList": CONFIG["cost_price_list"]}):
-            v = num(pp.get("unitPrice")) or num(pp.get("listPrice"))
-            if v > 0:
-                couts[norm(pp.get("product"))] = v
-        source = "prix de la liste d'achat"
+            origine[norm(pp.get("product"))] = "liste de vente"
+    if CONFIG.get("cost_price_list"):
+        try:
+            for pp in client.get("ProductPrice/byPriceList", {"priceList": CONFIG["cost_price_list"]}):
+                v, sk = num(pp.get("unitPrice")) or num(pp.get("listPrice")), norm(pp.get("product"))
+                if v > 0 and sk not in couts:
+                    couts[sk], origine[sk] = v, "liste d'achat"
+        except SystemExit:
+            pass
+    for p in raw_prods:
+        sk = p.get("searchKey")
+        if sk in couts:
+            continue
+        lines = [l for l in p.get("productPurchasing") or [] if l.get("isActive", True) is not False]
+        l = next((x for x in lines if x.get("currentVendor")), lines[0] if lines else None)
+        v = l and (num(l.get("purchaseOrderPrice")) or num(l.get("lastPurchasePrice")))
+        if v:
+            couts[sk], origine[sk] = v, "prix fournisseur"
+    nb = defaultdict(int)
+    for v in origine.values():
+        nb[v] += 1
+    source = " · ".join(f"{k} ({n})" for k, n in sorted(nb.items(), key=lambda x: -x[1])) or "aucun coût"
     refs = {"maj": now_local().isoformat(timespec="seconds"), "categories": cats, "produits": prods, "couts": couts, "source_couts": source, "noms": noms, "fournisseurs": fournisseurs}
     save_json("ref/refs.json", refs)
     return refs

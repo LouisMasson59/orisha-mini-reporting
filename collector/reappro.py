@@ -242,7 +242,7 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
     # 1re passe : statut de chaque article suivi (stock + reste à recevoir vs seuils) — sans lire les fiches article
     statuts = {}
     for sk, s in seuils.items():
-        st, oc = stock.get(sk, 0.0), ouvert.get(sk, {"qte": 0.0})
+        st, oc = max(0.0, stock.get(sk, 0.0)), ouvert.get(sk, {"qte": 0.0})
         dispo = st + oc["qte"]
         statuts[sk] = ("sans_seuil" if s.get("sans_seuil") else "a_commander" if s["mini"] > 0 and dispo < s["mini"]
                        else "couvert" if s["mini"] > 0 and st < s["mini"] else "ok")
@@ -261,7 +261,7 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
     anomalies = ([f"{sk} : hors assortiment du magasin — seuil ignoré" for sk in hors]
                  + (["Assortiment du magasin indisponible (Product/byStore) : contrôle d'assortiment désactivé"] if assort is None else []))
     for sk, s in seuils.items():
-        st, oc = stock.get(sk, 0.0), ouvert.get(sk, {"qte": 0.0, "retard": False, "docs": []})
+        st, oc = max(0.0, stock.get(sk, 0.0)), ouvert.get(sk, {"qte": 0.0, "retard": False, "docs": []})
         dispo = st + oc["qte"]
         cat = (refs.get("produits", {}).get(sk) or {}).get("cat")
         base = {"sk": sk, "nom": R.product_name(refs, sk, names.get(sk)), "famille": (cats.get(cat) or {}).get("nom") or cat or "Non classé",

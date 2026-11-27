@@ -286,7 +286,8 @@ function renderVentes(){
     cmpLbl = "vs S-1 même heure";
   }
   CMP = cmpLbl;
-  if(!k){ document.getElementById("tiles").innerHTML = `<div class="card empty">Aucune donnée pour cette journée.</div>`; return; }
+  document.querySelectorAll("#tab-ventes > .grid.g2").forEach(g => g.classList.toggle("hidden", !k));
+  if(!k){ document.getElementById("tiles").innerHTML = `<div class="card empty" style="grid-column:1/-1">Aucune vente ${S.store==="ALL" ? "" : `pour ${esc(storeLabel(S.store))} `}sur cette journée.</div>`; return; }
   const tiles = [
     ["CA TTC "+(live?"en cours":"de la journée"), eur0.format(k.ca_ttc), delta(k.ca_ttc, p&&p.ca_ttc), true],
     ["Tickets", n0.format(k.tickets), delta(k.tickets, p&&p.tickets)],
@@ -367,7 +368,8 @@ function renderStocks(){
     ["Valeur de stock (au coût)", compact(val), `<div class="delta">photo du ${frDate(ph.date)}</div>`, true],
     ["Ruptures sur articles vendus", n0.format(rup), `<div class="delta">${stores.length>1?"tous magasins":esc(storeLabel(S.store))}</div>`],
     ["Secteurs en surstock", n0.format(surs), `<div class="delta">couverture &gt; 90 jours</div>`],
-    ["Références dormantes", n0.format(dorm), `<div class="delta">aucune vente sur 30 j</div>`],
+    ["Références dormantes", stores.some(c => (ph.magasins[c]||{}).historique_ventes===false) && !dorm ? "–" : n0.format(dorm),
+      `<div class="delta">${stores.some(c => (ph.magasins[c]||{}).historique_ventes===false) ? "aucune vente sur 30 j · non évalué sans historique de ventes" : "aucune vente sur 30 j"}</div>`],
     ["Commandes en retard", compact(retard), `<div class="delta">valeur restant à livrer</div>`],
     ["Taux de service fournisseurs", pct(ts), `<div class="delta">ponctualité : ${pct(pu)}</div>`],
   ];

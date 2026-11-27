@@ -52,11 +52,19 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             stock[sk] += num(rec.get("quantityOnHand"))
             names[sk] = pi.get("name") or rec.get("product")
         sold = _sales_window(st["code"], day, win) if sells else {}
+        historique = sum(sold.values()) > 0  # magasin sans aucune vente sur la période : pas de verdict « dormant »
+        minis = {}
+        if sells and str(st["code"]) in {str(m["code"]) for m in (CONFIG.get("reappro") or {}).get("magasins", [])}:
+            from .reappro import lire_seuils
+            try:
+                minis = {sk: v["mini"] for sk, v in lire_seuils(st["code"]).items() if v["mini"] > 0}
+            except (SystemExit, Exception):
+                minis = {}
         negatifs = sum(1 for v in stock.values() if v < 0)
         sect = defaultdict(lambda: {"qte": 0.0, "valeur": 0.0, "refs": 0, "ruptures": 0, "dormants": 0, "vendu": 0.0})
         ruptures, dormants = [], []
         sans_cout = 0
-        for sk in set(stock) | set(sold):
+        for sk in set(stock) | set(sold) | set(minis):
             q, s = max(0.0, stock.get(sk, 0.0)), sold.get(sk, 0.0)  # stock négatif ramené à 0 (compté à part)
             sec = R.sector(refs, sk)
             nom = R.product_name(refs, sk, names.get(sk))
@@ -69,10 +77,10 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             a["vendu"] += s
             if q > 0:
                 a["refs"] += 1
-            if s > 0 and q <= 0:
+            if q <= 0 and (s > 0 or minis.get(sk)):  # vendu récemment, ou article suivi en réappro (mini > 0)
                 a["ruptures"] += 1
                 ruptures.append({"sk": sk, "nom": nom, "secteur": sec, "vendu": r2(s)})
-            elif q > 0 and s == 0 and sells:
+            elif q > 0 and s == 0 and sells and historique:
                 a["dormants"] += 1
                 dormants.append({"sk": sk, "nom": nom, "secteur": sec, "qte": r2(q), "valeur": r2(val)})
         detail = {}
@@ -86,6 +94,7 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             "refs_sans_cout": sans_cout,
             "refs_stock_negatif": negatifs,
             "vend": sells,
+            "historique_ventes": historique,
             "ruptures": sorted(ruptures, key=lambda x: -x["vendu"])[:15],
             "dormants": sorted(dormants, key=lambda x: -x["valeur"])[:15],
         }
