@@ -1,5 +1,5 @@
 {
-  "maj": "2026-11-27T20:35:12.097Z",
+  "maj": "2026-11-27T20:37:14.978Z",
   "mdp_sha256": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
   "magasins": [
     {
@@ -74,7 +74,7 @@
       "code": "TRA",
       "search_key": "TRA",
       "api_name": "Entrepôt TRA",
-      "label": "Entrepôt TRA",
+      "label": "Entrepôt Transis",
       "warehouse": "TRA",
       "type": "Entrepôt",
       "ventes": false,
