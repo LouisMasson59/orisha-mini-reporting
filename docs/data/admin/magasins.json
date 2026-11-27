@@ -1,5 +1,6 @@
 {
-  "maj": "2026-11-27T13:41:27.429Z",
+  "maj": "2026-11-27T20:35:12.097Z",
+  "mdp_sha256": "158a323a7ba44870f23d96f1516dd70aa48e9a72db4ebb026b0a89e212a208ab",
   "magasins": [
     {
       "code": "0001",
@@ -55,6 +56,28 @@
       "warehouse": "E-Commerce",
       "type": "Web",
       "ventes": true,
+      "stocks": true,
+      "reappro": false
+    },
+    {
+      "code": "CW",
+      "search_key": "CW",
+      "api_name": "Dépôt central France",
+      "label": "Dépôt central France",
+      "warehouse": "CW",
+      "type": "Entrepôt",
+      "ventes": false,
+      "stocks": true,
+      "reappro": false
+    },
+    {
+      "code": "TRA",
+      "search_key": "TRA",
+      "api_name": "Entrepôt TRA",
+      "label": "Entrepôt TRA",
+      "warehouse": "TRA",
+      "type": "Entrepôt",
+      "ventes": false,
       "stocks": true,
       "reappro": false
     }
