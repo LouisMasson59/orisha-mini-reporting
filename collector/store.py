@@ -8,6 +8,29 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "docs" / "data"
 CONFIG = json.loads((Path(__file__).parent / "config.json").read_text(encoding="utf-8"))
 TZ = ZoneInfo(CONFIG.get("timezone", "Europe/Paris"))
+ADMIN_FILE = DATA / "admin" / "magasins.json"
+
+
+def _apply_admin(cfg: dict) -> None:
+    """Magasins choisis dans l'onglet Administration du tableau de bord (docs/data/admin/magasins.json).
+    Ventes / Stocks → cfg["stores"] ; Réappro → cfg["reappro"]["magasins"]. Sans ce fichier : config.json."""
+    if not ADMIN_FILE.exists():
+        return
+    try:
+        ms = json.loads(ADMIN_FILE.read_text(encoding="utf-8")).get("magasins") or []
+    except ValueError:
+        return
+    base = lambda m: {"code": m["code"], "search_key": m.get("search_key", m["code"]), "api_name": m.get("api_name") or m["code"],
+                      "label": m.get("label") or m.get("api_name") or m["code"], "warehouse": m.get("warehouse") or m["code"],
+                      "type": m.get("type", "Magasin")}
+    stores = [dict(base(m), ventes=bool(m.get("ventes")), stocks=bool(m.get("stocks"))) for m in ms if m.get("ventes") or m.get("stocks")]
+    if stores:
+        cfg["stores"] = stores
+    cfg.setdefault("reappro", {})["magasins"] = [
+        dict(base(m), prefixe_commande=m.get("prefixe_commande") or f"{m['code']}-PO-") for m in ms if m.get("reappro")]
+
+
+_apply_admin(CONFIG)
 
 
 def now_local() -> datetime:
@@ -67,7 +90,8 @@ def write_meta(source: str) -> None:
     meta.update({
         "maj": now_local().isoformat(timespec="seconds"),
         "source": source,
-        "magasins": [{"code": s["code"], "label": s["label"], "type": s["type"]} for s in CONFIG["stores"]],
+        "magasins": [{"code": s["code"], "label": s["label"], "type": s["type"],
+                      "ventes": s.get("ventes", True), "stocks": s.get("stocks", True)} for s in CONFIG["stores"]],
         "entrepots": [{"code": s["code"], "label": s["label"], "type": s.get("type", "Entrepôt")} for s in CONFIG.get("stock_extra", [])],
     })
     save_json("meta.json", meta)

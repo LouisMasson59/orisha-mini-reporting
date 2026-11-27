@@ -25,7 +25,7 @@ from .store import days_between, now_local, parse_day, today, write_meta
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("commande", choices=["ventes", "nuit", "rattrapage", "diagnostic", "reappro", "commande"])
+    ap.add_argument("commande", choices=["ventes", "nuit", "rattrapage", "diagnostic", "reappro", "commande", "organisations"])
     ap.add_argument("--magasin")
     ap.add_argument("--seuils-json", default=os.environ.get("SEUILS_JSON") or None)
     ap.add_argument("--lignes-json", default=os.environ.get("LIGNES_JSON") or None)
@@ -42,6 +42,12 @@ def main():
     if a.commande == "diagnostic":
         from . import diagnostic
         diagnostic.main(client)
+        return
+
+    if a.commande == "organisations":
+        from . import orgs
+        r = orgs.decouvrir(client, now_iso)
+        print(f"{sum(o['magasin'] for o in r['organisations'])} magasin(s) sur {len(r['organisations'])} organisations")
         return
 
     if a.commande in ("reappro", "commande"):
@@ -74,6 +80,11 @@ def main():
         print("Photo de stock enregistrée")
         achats.collect(client, rf, day, now_iso)
         print("Achats / fournisseurs mis à jour")
+        try:
+            from . import orgs
+            orgs.decouvrir(client, now_iso)  # nouveaux magasins visibles dans l'onglet Administration
+        except (SystemExit, Exception) as e:
+            print(f"Liste des organisations non mise à jour : {e}")
         for m in reappro.RC.get("magasins", []):
             try:
                 r = reappro.calculer(client, m["code"], day, now_iso)

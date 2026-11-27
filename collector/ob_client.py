@@ -51,8 +51,8 @@ class OBClient:
             q = dict(params, _page=page, _pageSize=self.page_size)
             body = self._request(self.base + path + "?" + urllib.parse.urlencode(q))
             data = body.get("data") or []
-            if isinstance(data, dict):  # certains services renvoient data.records
-                data = data.get("records") or []
+            if isinstance(data, dict):  # data.records (listes) ou un objet unique (recherches bySearchKey, byId)
+                data = (data.get("records") or []) if "records" in data else [data]
             out.extend(data)
             has_next = bool((body.get("links") or {}).get("next"))
             if not data or (not has_next and len(data) < self.page_size):

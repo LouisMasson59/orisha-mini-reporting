@@ -119,3 +119,17 @@ docs/
   sinon `[{"produit":"TAPIS-DECO-160X230","qte":3}]` (fournisseur optionnel).
 - Magasins concernés : `config.json` › `reappro.magasins` (préfixe de numérotation, entrepôt). Taxe : le champ attend le
   **taux** (« VAT 20% »), déduit de la catégorie de taxe de l'article.
+
+## Administration des magasins
+
+Onglet **⚙ Administration** du tableau de bord : liste des organisations Openbravo (relue chaque nuit ou avec le bouton
+« Relire les magasins Openbravo », workflow `admin.yml` → `docs/data/ref/organisations.json`). Pour chaque magasin :
+libellé, entrepôt, type, et les onglets où il apparaît (**Ventes**, **Stocks**, **Réappro** + préfixe de numérotation des
+commandes). L'enregistrement écrit `docs/data/admin/magasins.json`, qui remplace `config.json` (stores, reappro.magasins)
+pour les collectes suivantes ; la page propose de lancer la collecte de nuit tout de suite.
+
+## Assortiment (réappro)
+
+Le réappro s'appuie sur l'assortiment du magasin (`Product/byStore`) : seuls ses articles sont commandables ; un article
+de l'assortiment sans seuil apparaît « Sans seuil » (commande manuelle possible) ; un seuil sur un article hors
+assortiment est signalé en anomalie et ignoré. Un magasin sans fichier de seuils fonctionne (tout est « sans seuil »).

@@ -104,6 +104,10 @@ class MockAPI:
     def get(self, path: str, p: dict) -> list:
         if path == "Product":
             return [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products] + FR.products()
+        if path == "Product/byStore":
+            if p.get("store") in (FR.ORG["searchKey"], FR.ORG["name"]):
+                return FR.products()
+            return [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products]
         if path == "Product/bySearchKey":
             sk = p.get("productSearchKey")
             return [x for x in FR.products() if x["searchKey"] == sk] or [{k: v for k, v in x.items() if k in ("searchKey", "name", "productCategory")} for x in self.products if x["searchKey"] == sk]
@@ -123,7 +127,14 @@ class MockAPI:
         if path == "ProductPrice/byPriceList":
             return [{"product": x["searchKey"], "listPrice": x["price"], "unitPrice": x["price"], "cost": x["cost"], "priceList": p.get("priceList")} for x in self.products]
         if path == "Organization":
-            return [{"id": c, "name": s["api_name"], "searchKey": s.get("search_key", c)} for c, s in self.stores.items()] + [FR.ORG]
+            return ([{"id": c, "name": s["api_name"], "searchKey": s.get("search_key", c), "parent": {"name": "Orisha Commerce"},
+                      "anonymousCustomer": "ANON" if s.get("type") != "Web" else None,
+                      "onHandWarehouses": [{"warehouse": s["warehouse"], "priority": 10, "active": True}]} for c, s in self.stores.items()]
+                    + [dict(FR.ORG, parent={"name": "Franchisee 1"}, anonymousCustomer="ANON",
+                            onHandWarehouses=[{"warehouse": FR.WH, "priority": 10, "active": True}])]
+                    + [{"id": "FR-NET", "name": "Franchisee", "searchKey": "Franchisee", "parent": {"name": "Orisha Commerce"}, "onHandWarehouses": []},
+                       {"id": "FR-1", "name": "Franchisee 1", "searchKey": "Franchisee 1", "parent": {"name": "Franchisee"}, "onHandWarehouses": []},
+                       {"id": "0", "name": "Orisha Commerce", "searchKey": "Orisha Commerce", "onHandWarehouses": []}])
         if path == "Order":
             return self._sales("0001", today() - timedelta(days=1)) + [o for o in self._pos()][:5]
         if path == "Order/byOrgOrderDateRange":

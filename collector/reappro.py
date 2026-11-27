@@ -5,11 +5,12 @@ Calcul (par magasin) :
   si disponible < mini  →  besoin = maxi − disponible, arrondi au colisage du fournisseur
                             (quantité minimale de commande, multiple) lu dans l'onglet Purchasing d'Openbravo.
 Les seuils (mini, maxi, fournisseur imposé) viennent de collector/seuils/<magasin>.csv
-(téléversé depuis le tableau de bord). Seuls les articles de ce fichier sont suivis.
+(téléversé depuis le tableau de bord).
 
-Volumétrie : aucune lecture du catalogue complet. Le statut de chaque article se calcule avec le stock du magasin
-et les commandes en cours ; les fiches article (onglet Purchasing) ne sont lues, une par une, que pour les
-articles à commander ou couverts. Le fichier de propositions ne contient que ces exceptions.
+Assortiment : seuls les articles de l'assortiment du magasin (Product/byStore) peuvent être commandés.
+Un article de l'assortiment sans seuil est listé « sans seuil » (commandable à la main) ; un seuil sur un
+article hors assortiment est signalé en anomalie et ignoré. Le fichier de propositions contient les exceptions
+(à commander, couverts) et, jusqu'à reappro.max_lignes_ok, le reste de l'assortiment.
 
 Commande : les lignes validées sont regroupées par fournisseur et importées dans Openbravo
 (ImportService/PurchaseOrder → commande au statut « Booked »).
@@ -48,8 +49,8 @@ def lire_seuils(code: str, seuils_json: str | None = None) -> dict:
         rows = json.loads(seuils_json)
     else:
         f = SEUILS_DIR / f"{code}.csv"
-        if not f.exists():
-            raise SystemExit(f"Pas de seuils pour {code} : créer {f.relative_to(SEUILS_DIR.parents[1])}")
+        if not f.exists():  # magasin sans fichier de seuils : tout l'assortiment est « sans seuil » (commande manuelle)
+            return {}
         txt = f.read_text(encoding="utf-8-sig")
         first = txt.split("\n", 1)[0]
         rows = list(csv.DictReader(txt.splitlines(), delimiter=";" if first.count(";") >= first.count(",") else ","))
@@ -207,10 +208,31 @@ def _actives(prod: dict | None) -> list:
             if l.get("isActive", True) is not False and not l.get("isDiscontinued") and not l.get("discontinued")]
 
 
+_ASSORT = {}
+
+
+def assortiment(client, m: dict) -> dict | None:
+    """{search key: fiche article} de l'assortiment du magasin, onglet Purchasing compris. None si indisponible."""
+    try:
+        ps = client.get("Product/byStore", {"store": m.get("search_key", m["code"])})
+    except SystemExit:
+        return None
+    return {p.get("searchKey"): p for p in ps if p.get("searchKey")} or None
+
+
 def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None = None, demande: str | None = None) -> dict:
     m = magasin(code)
     refs = R.load(client)
-    seuils = lire_seuils(code, seuils_json)
+    tous_seuils = lire_seuils(code, seuils_json)
+    assort = assortiment(client, m)
+    _ASSORT[code] = assort
+    if assort is None:
+        seuils, hors = tous_seuils, []
+    else:
+        seuils = {sk: v for sk, v in tous_seuils.items() if sk in assort}
+        hors = sorted(sk for sk in tous_seuils if sk not in assort)
+        for sk in assort:  # article de l'assortiment sans seuil : suivi, jamais proposé automatiquement
+            seuils.setdefault(sk, {"mini": 0.0, "maxi": 0.0, "fournisseur": None, "sans_seuil": True})
     org = org_name(client, m)
     stock, names = stock_magasin(client, refs, m)
     orders = commandes_magasin(client, org, day, int(RC.get("historique_commandes_j", 90)))
@@ -222,12 +244,22 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
     for sk, s in seuils.items():
         st, oc = stock.get(sk, 0.0), ouvert.get(sk, {"qte": 0.0})
         dispo = st + oc["qte"]
-        statuts[sk] = "a_commander" if s["mini"] > 0 and dispo < s["mini"] else "couvert" if s["mini"] > 0 and st < s["mini"] else "ok"
-    exceptions = [sk for sk, x in statuts.items() if x != "ok"]
+        statuts[sk] = ("sans_seuil" if s.get("sans_seuil") else "a_commander" if s["mini"] > 0 and dispo < s["mini"]
+                       else "couvert" if s["mini"] > 0 and st < s["mini"] else "ok")
+    exceptions = [sk for sk, x in statuts.items() if x in ("a_commander", "couvert")]
+    max_ok = int(RC.get("max_lignes_ok", 5000))
+    autres = [sk for sk, x in statuts.items() if x in ("ok", "sans_seuil")]
+    detail_autres = len(autres) <= max_ok
 
-    # 2e passe : fiches article (Purchasing) des seules exceptions
-    prods = produits(client, set(exceptions))
-    lignes, ok_lignes, anomalies = [], [], []
+    # 2e passe : fiches article (Purchasing) — l'assortiment les fournit ; sinon lecture des seules exceptions
+    besoin_fiches = set(exceptions) | (set(autres) if detail_autres else set())
+    prods = {sk: assort[sk] for sk in besoin_fiches if sk in assort} if assort else {}
+    manquantes = {sk for sk in exceptions if "productPurchasing" not in (prods.get(sk) or {})}
+    if manquantes:
+        prods.update(produits(client, manquantes))
+    lignes, ok_lignes = [], []
+    anomalies = ([f"{sk} : hors assortiment du magasin — seuil ignoré" for sk in hors]
+                 + (["Assortiment du magasin indisponible (Product/byStore) : contrôle d'assortiment désactivé"] if assort is None else []))
     for sk, s in seuils.items():
         st, oc = stock.get(sk, 0.0), ouvert.get(sk, {"qte": 0.0, "retard": False, "docs": []})
         dispo = st + oc["qte"]
@@ -235,8 +267,13 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
         base = {"sk": sk, "nom": R.product_name(refs, sk, names.get(sk)), "famille": (cats.get(cat) or {}).get("nom") or cat or "Non classé",
                 "stock": r2(st), "en_commande": r2(oc["qte"]), "disponible": r2(dispo), "mini": r2(s["mini"]), "maxi": r2(s["maxi"]),
                 "rupture": st <= 0, "statut": statuts[sk]}
-        if statuts[sk] == "ok":
-            ok_lignes.append(base)
+        if statuts[sk] in ("ok", "sans_seuil"):
+            if detail_autres:
+                prod = prods.get(sk)
+                ok_lignes.append({**base, "nom": R.product_name(refs, sk, names.get(sk) or (prod or {}).get("name")),
+                                  "alternatives": sorted((_alternative(l, fournisseurs, couts.get(sk, 0.0)) for l in _actives(prod)),
+                                                         key=lambda a: (not a["habituel"], a["prix"] or 0)),
+                                  "fournisseur": _key((ligne_achat(prod, s["fournisseur"]) or {}).get("businessPartner"))})
             continue
         prod = prods.get(sk)
         alts = sorted((_alternative(l, fournisseurs, couts.get(sk, 0.0)) for l in _actives(prod)), key=lambda a: (not a["habituel"], a["prix"] or 0))
@@ -270,22 +307,26 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
             g["qte"] += r["qte_proposee"]
             g["montant"] += r["montant"]
             g["livraison_prevue"] = max(filter(None, [g["livraison_prevue"], r["livraison_prevue"]]))
-    max_ok = int(RC.get("max_lignes_ok", 5000))
     res = {"date": day.isoformat(), "maj": now_iso, "source": client.source, "demande": demande,
            "magasin": {"code": code, "label": m.get("label", code), "organisation": org, "entrepot": m["warehouse"]},
            "regle": "Commande si disponible (stock + reste à recevoir) < mini ; quantité = maxi − disponible, arrondie au colisage fournisseur (onglet Purchasing).",
-           "resume": {"articles_suivis": len(seuils), "a_commander": sum(r["statut"] == "a_commander" for r in lignes),
-                      "couverts": sum(r["statut"] == "couvert" for r in lignes), "ok": len(ok_lignes),
-                      "ruptures": sum(1 for sk in seuils if stock.get(sk, 0.0) <= 0),
+           "resume": {"assortiment": len(assort) if assort is not None else None,
+                      "articles_suivis": sum(1 for s in seuils.values() if not s.get("sans_seuil")),
+                      "a_commander": sum(r["statut"] == "a_commander" for r in lignes),
+                      "couverts": sum(r["statut"] == "couvert" for r in lignes),
+                      "ok": sum(x == "ok" for x in statuts.values()), "sans_seuil": sum(x == "sans_seuil" for x in statuts.values()),
+                      "hors_assortiment": len(hors),
+                      "ruptures": sum(1 for sk, s in seuils.items() if not s.get("sans_seuil") and stock.get(sk, 0.0) <= 0),
                       "en_stock_sans_seuil": sum(1 for sk, q in stock.items() if q > 0 and sk not in seuils),
                       "fiches_lues": len(prods), "montant_propose": r2(sum(g["montant"] for g in groupes.values()))},
            "commandes_proposees": [{"fournisseur": k, "fournisseur_nom": fournisseurs.get(k) or k, **{x: r2(v) if isinstance(v, float) else v for x, v in g.items()}}
                                    for k, g in sorted(groupes.items())],
            "lignes": lignes,
-           "lignes_ok": ok_lignes if len(ok_lignes) <= max_ok else None,  # au-delà : seulement le nombre (fichier léger)
+           "lignes_ok": ok_lignes if detail_autres else None,  # OK + sans seuil ; au-delà du plafond : seulement les nombres
            "anomalies": anomalies}
     save_json(f"reappro/{code}.json", res)
-    idx = [x for x in (load_json("reappro/index.json", []) or []) if x.get("code") != code]
+    actifs = {str(x["code"]) for x in RC.get("magasins", [])}
+    idx = [x for x in (load_json("reappro/index.json", []) or []) if x.get("code") != code and x.get("code") in actifs]
     save_json("reappro/index.json", sorted(idx + [{"code": code, "label": m.get("label", code)}], key=lambda x: x["code"]))
     return res
 
@@ -353,11 +394,17 @@ def commander(client, code: str, day: date, now_iso: str, lignes_json: str | Non
     else:
         demandees = [{"sk": r["sk"], "qte": r["qte_proposee"], "fournisseur": r["fournisseur"]} for r in prop["lignes"] if r["statut"] == "a_commander"]
     refs = R.load(client)
-    prods = produits(client, {d["sk"] for d in demandees})
+    assort = _ASSORT.get(code)
+    sks = {d["sk"] for d in demandees}
+    prods = {sk: assort[sk] for sk in sks if assort and sk in assort and "productPurchasing" in assort[sk]}
+    prods.update(produits(client, sks - set(prods) - (set() if assort is None else sks - set(assort))))
     taxes = _taux_taxes(client)
     par_fournisseur, rejets = defaultdict(list), []
     for d in demandees:
         if d["qte"] <= 0:
+            continue
+        if assort is not None and d["sk"] not in assort:
+            rejets.append(f"{d['sk']} : hors assortiment du magasin — non commandable")
             continue
         r = ref.get(d["sk"], {})
         sup = d["fournisseur"] or r.get("fournisseur")

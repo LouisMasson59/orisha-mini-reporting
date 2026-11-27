@@ -75,6 +75,8 @@
   .tscroll{overflow-x:auto}
   td select,td input[type=number]{font:inherit;font-size:13px;padding:4px 6px;border:1px solid #d9d6e3;border-radius:6px;background:#fff}
   td input[type=number]{width:72px;text-align:right}
+  td input[type=text]{font:inherit;font-size:13px;padding:4px 6px;border:1px solid #d9d6e3;border-radius:6px}
+  td input[type=text]:disabled{background:#f6f5f9;color:var(--muted)}
   td input.warnq{border-color:var(--warn);background:var(--warn-bg)}
   tr.sel td{background:#faf8fe}
   .tag{font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;background:#eef6f5;color:#0d7d71;margin-left:4px}
@@ -98,6 +100,7 @@
   <button class="on" data-tab="ventes">Ventes du jour</button>
   <button data-tab="stocks">Stocks &amp; achats</button>
   <button data-tab="reappro">Réappro franchisé</button>
+  <button data-tab="admin">⚙ Administration</button>
 </nav>
 <div class="filters">
   <label id="lblStore">Magasin <select id="fStore"></select></label>
@@ -171,6 +174,7 @@
           <button class="chip on" data-v="a_commander">À commander <b></b></button>
           <button class="chip on" data-v="couvert">Couvert <b></b></button>
           <button class="chip" data-v="ok">OK <b></b></button>
+          <button class="chip" data-v="sans_seuil">Sans seuil <b></b></button>
         </span>
         <label>Fournisseur <select id="fFour"></select></label>
         <label>Famille <select id="fFam"></select></label>
@@ -183,6 +187,24 @@
       <div id="propMore"></div>
       <div id="anomalies"></div></div>
     <div class="card" style="margin-top:16px"><h3>Commandes créées dans Openbravo</h3><div class="sub">Propositions validées, importées au statut « Booked »</div><div id="cmdCreees"></div></div>
+  </section>
+  <!-- ============================ ADMINISTRATION ============================ -->
+  <section id="tab-admin" class="hidden">
+    <div class="toolbar">
+      <div id="aRun" class="maj"></div>
+      <div class="tb-right">
+        <span id="aGhState" class="maj"></span>
+        <button class="btn ghost" id="btnOrgs">↻ Relire les magasins Openbravo</button>
+        <button class="btn primary" id="btnSaveAdmin">Enregistrer</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Magasins par onglet</h3>
+      <div class="sub" id="aSub">Choisissez les magasins proposés dans chaque onglet. La liste vient d'Openbravo (organisations avec entrepôt) et se relit chaque nuit ou avec le bouton.</div>
+      <div class="rfilters"><label><input type="checkbox" id="aAll"> Afficher aussi les organisations sans entrepôt (regroupements)</label></div>
+      <div id="aTable" class="tscroll"></div>
+      <div class="maj" style="margin-top:8px">Les changements Ventes / Stocks s'appliquent aux données à la prochaine collecte (ventes : chaque heure ; stocks : chaque nuit). L'historique des ventes d'un nouveau magasin se reprend avec le traitement « Rattrapage de l'historique ».</div>
+    </div>
+  </section>
     <dialog id="ghDlg">
       <h3>Connecter le tableau de bord à GitHub</h3>
       <p>Les boutons <b>Recalculer</b> et <b>Commander</b> lancent le traitement « Réappro mini/maxi » du dépôt. Ils ont besoin d'un jeton GitHub personnel, conservé <b>uniquement dans ce navigateur</b>.</p>
@@ -194,7 +216,6 @@
       <input type="password" id="ghTok" placeholder="github_pat_…" style="width:100%">
       <div class="dlg-btns"><button class="btn ghost" id="ghOff">Déconnecter</button><button class="btn ghost" id="ghCancel">Annuler</button><button class="btn primary" id="ghOk">Enregistrer</button></div>
     </dialog>
-  </section>
 </main>
 
 <script>
@@ -295,7 +316,7 @@ function renderVentes(){
   // Tendance 30 jours
   const tEnd = live ? addDays(S.date,-1) : S.date; // la journée en cours (partielle) n'entre pas dans la tendance
   const dates = []; for(let i=29;i>=0;i--) dates.push(addDays(tEnd,-i));
-  const stores = S.store==="ALL" ? S.meta.magasins.map(m=>m.code) : [S.store];
+  const stores = S.store==="ALL" ? tabStores("ventes") : [S.store];
   const val = (d,c) => { const r = S.hist.find(x=>x.date===d && x.magasin===c); return r && r.tickets ? r.ca_ttc : null; }; // jour fermé = trou
   draw("cTrend", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c => lineDs(storeLabel(c), dates.map(d=>val(d,c)), STORE_COLORS[c]||PRIMARY))}});
   legend("legTrend", stores.length>1 ? stores.map(c=>[storeLabel(c), STORE_COLORS[c]]) : []);
@@ -321,7 +342,7 @@ function renderVentes(){
   const showMag = S.store==="ALL";
   ["hMag","subMag","magasins"].forEach(id => document.getElementById(id).classList.toggle("hidden", !showMag));
   if(showMag){
-    const ms = S.meta.magasins.map(m => ({code:m.code, label:m.label, k:(S.jour.magasins[m.code]||{}).kpi||{}}));
+    const ms = S.meta.magasins.filter(m => tabStores("ventes").includes(m.code)).map(m => ({code:m.code, label:m.label, k:(S.jour.magasins[m.code]||{}).kpi||{}}));
     const maxM = Math.max(1, ...ms.map(m=>m.k.ca_ttc||0));
     document.getElementById("magasins").innerHTML = `<table><tr><th>Magasin</th><th class="n">CA TTC</th><th class="n">Tickets</th><th class="n">Panier</th><th style="width:26%"></th></tr>${ms.map(m=>`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${STORE_COLORS[m.code]};margin-right:6px"></i>${esc(m.label)}</td><td class="n">${eur0.format(m.k.ca_ttc||0)}</td><td class="n">${n0.format(m.k.tickets||0)}</td><td class="n">${m.k.panier?eur0.format(m.k.panier):"–"}</td><td><div class="bar" style="width:${(m.k.ca_ttc||0)/maxM*100}%"></div></td></tr>`).join("")}</table>`;
   }
@@ -332,7 +353,7 @@ function status(v){ if(v==null) return `<span class="st">–</span>`; const c = 
 function renderStocks(){
   const ph = S.photo, fo = S.four;
   if(!ph){ document.getElementById("tilesStock").innerHTML = `<div class="card empty">Pas encore de photo de stock : elle est prise chaque nuit.</div>`; return; }
-  const stores = S.store==="ALL" ? Object.keys(ph.magasins) : [S.store];
+  const stores = S.store==="ALL" ? tabStores("stocks") : [S.store];
   let val=0, rup=0, dorm=0, qte=0, vendu=0, surs=0;
   const secAgg = {};
   stores.forEach(c => { const m = ph.magasins[c]; if(!m) return;
@@ -398,10 +419,8 @@ async function loadAll(first){
   const wasLatest = !S.date || S.auto || S.date === (S.jours||[])[S.jours.length-1];
   S.auto = false;
   Object.assign(S, {meta, jours, hist, photo, stHist, four, rec});
-  await loadReappro();
-  if(first){
-    document.getElementById("fStore").innerHTML = `<option value="ALL">Tous les magasins</option>` + meta.magasins.map(m=>`<option value="${esc(m.code)}">${esc(m.label)}</option>`).join("");
-  }
+  await Promise.all([loadReappro(), loadAdmin()]);
+  fillStoreSelect();
   if(wasLatest) S.date = jours[jours.length-1];
   document.getElementById("fDate").innerHTML = [...jours].reverse().slice(0,90).map(d=>`<option value="${d}" ${d===S.date?"selected":""}>${frDate(d)}</option>`).join("");
   const sim = meta.source === "simulation";
@@ -418,7 +437,7 @@ async function loadAll(first){
   render();
 }
 // ------------------------------------------------------------------ RÉAPPRO
-const RSTAT = {a_commander:["crit","À commander"], couvert:["warn","Couvert"], ok:["good","OK"]};
+const RSTAT = {a_commander:["crit","À commander"], couvert:["warn","Couvert"], ok:["good","OK"], sans_seuil:["","Sans seuil"]};
 const RF = {statut:new Set(["a_commander","couvert"]), four:"", fam:"", rupt:false, retard:false, sel:false, txt:"", limit:100};
 const allLines = R => R ? R.lignes.concat(R.lignes_ok||[]) : [];
 const GH = (() => { // dépôt GitHub : déduit de l'URL GitHub Pages (<owner>.github.io/<repo>/), sinon valeur par défaut
@@ -430,9 +449,10 @@ async function ghApi(path, opt={}){
   const r = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}${path}`, Object.assign({}, opt, {headers:Object.assign({
     "Authorization":"Bearer "+ghToken(), "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"}, opt.headers||{})}));
   if(!r.ok) throw new Error(`GitHub ${r.status} : ${(await r.text()).slice(0,200)}`);
-  return r.status===204 ? null : r.json();
+  if(r.status===204) return null;
+  return opt.text ? r.text() : r.json();
 }
-const ghFile = p => ghApi(`/contents/docs/data/${p}?ref=main&t=${Date.now()}`, {headers:{"Accept":"application/vnd.github.raw+json"}});
+const ghFile = async p => JSON.parse(await ghApi(`/contents/docs/data/${p}?ref=main&t=${Date.now()}`, {text:true, headers:{"Accept":"application/vnd.github.raw+json"}}));
 
 async function loadReappro(fromApi=false){
   const get = p => fromApi && ghToken() ? ghFile(p).catch(()=>j(p)) : j(p);
@@ -475,7 +495,7 @@ function renderReappro(){
   document.getElementById("tilesReappro").innerHTML = `
     <div class="card tile hero"><div class="lbl">Sélection à commander HT</div><div class="val">${eur0.format(tot)}</div>
       <div class="delta">${sel.length} ligne(s) · proposition initiale ${eur0.format(r.montant_propose||0)} · calcul du ${new Date(R.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}</div></div>
-    <div class="card tile"><div class="lbl">Articles à commander</div><div class="val">${r.a_commander}</div><div class="delta">sur ${n0.format(r.articles_suivis)} articles avec seuil</div></div>
+    <div class="card tile"><div class="lbl">Articles à commander</div><div class="val">${r.a_commander}</div><div class="delta">sur ${n0.format(r.articles_suivis)} articles avec seuil${r.assortiment!=null?` · assortiment ${n0.format(r.assortiment)}`:""}${r.hors_assortiment?` · <b class="down">${r.hors_assortiment} seuil(s) hors assortiment</b>`:""}</div></div>
     <div class="card tile"><div class="lbl">Ruptures</div><div class="val" style="color:${r.ruptures?'var(--crit)':'inherit'}">${r.ruptures}</div><div class="delta">stock nul en magasin${r.en_stock_sans_seuil?` · ${n0.format(r.en_stock_sans_seuil)} en stock sans seuil`:""}</div></div>
     <div class="card tile"><div class="lbl">Couverts par une commande</div><div class="val">${r.couverts}</div><div class="delta">${retard ? `<b class="down">dont ${retard} en retard</b>` : "aucune en retard"}</div></div>`;
   document.getElementById("regle").textContent = R.regle;
@@ -491,10 +511,10 @@ function renderReappro(){
   btn.disabled = !sel.length || S.running; btn.textContent = sel.length ? `Commander la sélection (${gk.length} cde · ${eur0.format(tot)})` : "Commander la sélection";
   document.getElementById("btnCalc").disabled = !!S.running;
   // filtres
-  const cnt = {a_commander:r.a_commander, couvert:r.couverts, ok:r.ok ?? (R.lignes_ok||[]).length};
-  const okDispo = !!R.lignes_ok; if(!okDispo) RF.statut.delete("ok");
+  const cnt = {a_commander:r.a_commander, couvert:r.couverts, ok:r.ok ?? (R.lignes_ok||[]).length, sans_seuil:r.sans_seuil||0};
+  const okDispo = !!R.lignes_ok; if(!okDispo){ RF.statut.delete("ok"); RF.statut.delete("sans_seuil"); }
   document.querySelectorAll("#fStatut .chip").forEach(c => { c.classList.toggle("on", RF.statut.has(c.dataset.v)); c.querySelector("b").textContent = n0.format(cnt[c.dataset.v]);
-    if(c.dataset.v==="ok"){ c.disabled = !okDispo; c.title = okDispo ? "" : "Trop d'articles OK pour les afficher : seules les exceptions sont chargées"; } });
+    if(c.dataset.v==="ok" || c.dataset.v==="sans_seuil"){ c.disabled = !okDispo; c.title = okDispo ? "" : "Trop d'articles OK pour les afficher : seules les exceptions sont chargées"; } });
   const fours = [...new Map(allLines(R).flatMap(l=>l.alternatives||[]).map(a=>[a.fournisseur,a.nom])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
   document.getElementById("fFour").innerHTML = `<option value="">Tous</option>` + fours.map(([k,n])=>`<option value="${esc(k)}" ${k===RF.four?"selected":""}>${esc(n)}</option>`).join("");
   const fams = [...new Set(allLines(R).map(l=>l.famille))].sort();
@@ -513,14 +533,14 @@ function renderGrid(){
         <td><span class="st ${c}">${t}</span></td><td>${esc(l.nom)}<div class="maj">${esc(l.sk)} · ${esc(l.famille)}</div></td>
         <td class="n" style="${l.rupture?'color:var(--crit);font-weight:600':''}">${n0.format(l.stock)}</td>
         <td class="n">${l.en_commande?`${n0.format(l.en_commande)}<div class="maj">${cmdTxt(l)}</div>`:"–"}</td>
-        <td class="n">${n0.format(l.mini)} / ${n0.format(l.maxi)}</td>
-        <td>${alts.length ? `<select class="rFour">${alts.map(a=>`<option value="${esc(a.fournisseur)}" ${a.fournisseur===k.s.four?"selected":""}>${esc(a.nom)}${a.habituel?" ★":""} · ${eur2.format(a.prix||0)} · ${a.delai_j} j</option>`).join("")}</select>` : `<span class="maj">${l.statut==="ok" ? "Fournisseur habituel (prix à la commande)" : "–"}</span>`}
+        <td class="n">${l.statut==="sans_seuil" ? "–" : `${n0.format(l.mini)} / ${n0.format(l.maxi)}`}</td>
+        <td>${alts.length ? `<select class="rFour">${alts.map(a=>`<option value="${esc(a.fournisseur)}" ${a.fournisseur===k.s.four?"selected":""}>${esc(a.nom)}${a.habituel?" ★":""} · ${eur2.format(a.prix||0)} · ${a.delai_j} j</option>`).join("")}</select>` : `<span class="maj">${l.statut==="ok"||l.statut==="sans_seuil" ? "Fournisseur habituel (prix à la commande)" : "–"}</span>`}
           ${k.a?`<div class="maj">${[k.a.minimum_cde>1?`min ${n0.format(k.a.minimum_cde)}`:"", k.a.multiple>1?`par ${n0.format(k.a.multiple)}`:"", l.besoin?`besoin ${n0.format(l.besoin)}`:""].filter(Boolean).join(" · ")}</div>`:""}</td>
         <td class="n"><input type="number" min="0" step="${(k.a&&k.a.multiple)||1}" class="rQte ${k.warn?'warnq':''}" value="${k.s.qte||0}" ${k.warn?'title="Ne respecte pas le colisage du fournisseur"':''}></td>
         <td class="n">${k.s.qte>0&&k.liv?shortDate(k.liv):"–"}</td><td class="n">${k.s.qte>0?eur2.format(k.montant):"–"}</td></tr>`; }).join("")}</table>`
     : `<div class="empty">Aucun article ne correspond aux filtres.</div>`;
   document.getElementById("propMore").innerHTML = rows.length > RF.limit ? `<div style="text-align:center;margin-top:10px"><button class="btn ghost" id="btnMore">Afficher plus (${n0.format(rows.length - RF.limit)} restants)</button></div>`
-    : rows.length ? `<div class="maj" style="margin-top:6px">${n0.format(rows.length)} article(s) affiché(s) sur ${n0.format(S.reappro.resume.articles_suivis)} avec seuil</div>` : "";
+    : rows.length ? `<div class="maj" style="margin-top:6px">${n0.format(rows.length)} article(s) affiché(s) · ${n0.format(S.reappro.resume.assortiment ?? S.reappro.resume.articles_suivis)} dans l'assortiment</div>` : "";
 }
 function renderCmds(){
   const cmds = (S.cmds||[]).filter(c=>c.magasin===S.rstore).slice(-15).reverse();
@@ -554,7 +574,7 @@ document.querySelectorAll("#fStatut .chip").forEach(c => c.onclick = () => { RF.
 [["fRupt","rupt"],["fRetard","retard"],["fSel","sel"]].forEach(([id,k]) => document.getElementById(id).onchange = e => { RF[k] = e.target.checked; RF.limit = 100; renderReappro(); });
 document.getElementById("fTxt").oninput = e => { RF.txt = e.target.value; RF.limit = 100; renderGrid(); };
 // ---- Recalculer / Commander : lancement du workflow GitHub puis suivi
-function ghStateText(){ document.getElementById("ghState").innerHTML = ghToken() ? `GitHub connecté · <a href="#" id="ghEdit">modifier</a>` : `<a href="#" id="ghEdit">Connecter GitHub</a> pour activer les boutons`; }
+function ghStateText(){ setTimeout(() => S.tab==="admin" && renderAdmin(), 0); document.getElementById("ghState").innerHTML = ghToken() ? `GitHub connecté · <a href="#" id="ghEdit">modifier</a>` : `<a href="#" id="ghEdit">Connecter GitHub</a> pour activer les boutons`; }
 document.getElementById("ghState").addEventListener("click", e => { if(e.target.id==="ghEdit"){ e.preventDefault(); openGh(); } });
 function openGh(){ document.getElementById("ghRepoName").textContent = `${GH.owner}/${GH.repo}`; document.getElementById("ghTok").value = ""; document.getElementById("ghDlg").showModal(); }
 document.getElementById("ghOk").onclick = () => { const v = document.getElementById("ghTok").value.trim(); try { if(v) localStorage.setItem("orisha_gh_token", v); } catch(e){} document.getElementById("ghDlg").close(); ghStateText(); };
@@ -569,16 +589,8 @@ async function launch(action, lignes){
   const t0 = Date.now();
   try {
     runMsg("run", action==="commande" ? "Création des commandes dans Openbravo…" : "Calcul en cours…");
-    await ghApi(`/actions/workflows/reappro.yml/dispatches`, {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ref:"main", inputs:{action, magasin:S.rstore, demande, lignes_json: lignes ? JSON.stringify(lignes) : ""}})});
-    let run = null;
-    for(let i=0; i<40 && !run; i++){ await sleep(3000);
-      const rs = await ghApi(`/actions/workflows/reappro.yml/runs?event=workflow_dispatch&per_page=10`);
-      run = (rs.workflow_runs||[]).find(x => (x.display_title||"").includes(demande)); }
-    if(!run) throw new Error("le traitement n'a pas démarré (vérifier l'onglet Actions)");
-    while(run.status !== "completed"){ await sleep(4000); run = await ghApi(`/actions/runs/${run.id}`);
-      runMsg("run", `${action==="commande" ? "Création des commandes" : "Calcul"} en cours… ${Math.round((Date.now()-t0)/1000)} s · <a href="${run.html_url}" target="_blank">suivre</a>`); }
-    if(run.conclusion !== "success") throw new Error(`traitement en échec · <a href="${run.html_url}" target="_blank">voir le détail</a>`);
+    await runWorkflow("reappro.yml", {action, magasin:S.rstore, demande, lignes_json: lignes ? JSON.stringify(lignes) : ""},
+      (run, sec) => runMsg("run", `${action==="commande" ? "Création des commandes" : "Calcul"} en cours… ${sec} s · <a href="${run.html_url}" target="_blank">suivre</a>`));
     await loadReappro(true);
     if(action==="commande"){
       const mine = (S.cmds||[]).filter(c => c.demande===demande), ok = mine.filter(c=>c.etat==="ok");
@@ -618,8 +630,10 @@ function parseSeuils(txt){
 document.getElementById("btnDlSeuils").onclick = async () => {
   if(!ghToken()) return openGh();
   try {
-    const txt = await ghApi(`/contents/${seuilsPath()}?ref=main&t=${Date.now()}`, {headers:{"Accept":"application/vnd.github.raw+json"}}).catch(async e => { throw e; });
-    const blob = new Blob(["\ufeff" + (typeof txt === "string" ? txt : JSON.stringify(txt))], {type:"text/csv;charset=utf-8"});
+    let txt;
+    try { txt = await ghApi(`/contents/${seuilsPath()}?ref=main&t=${Date.now()}`, {text:true, headers:{"Accept":"application/vnd.github.raw+json"}}); }
+    catch(e){ if(!String(e.message).includes("404")) throw e; txt = "produit;mini;maxi;fournisseur\n"; }  // pas encore de seuils : modèle vide
+    const blob = new Blob(["\ufeff" + txt], {type:"text/csv;charset=utf-8"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `seuils_${S.rstore}.csv`; a.click();
   } catch(err){ runMsg("ko", "Téléchargement impossible : " + esc(err.message||err)); }
 };
@@ -647,7 +661,105 @@ document.getElementById("btnCmd").onclick = () => {
 };
 ghStateText();
 
-function render(){ S.tab==="ventes" ? renderVentes() : S.tab==="stocks" ? renderStocks() : renderReappro(); }
+// ------------------------------------------------------------------ ADMINISTRATION
+async function runWorkflow(file, inputs, onTick){
+  // lance un workflow GitHub (workflow_dispatch) et attend sa fin ; le run est retrouvé par son titre (demande)
+  await ghApi(`/actions/workflows/${file}/dispatches`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ref:"main", inputs})});
+  if(!inputs.demande) return null;
+  let run = null; const t0 = Date.now();
+  for(let i=0; i<40 && !run; i++){ await sleep(3000);
+    const rs = await ghApi(`/actions/workflows/${file}/runs?event=workflow_dispatch&per_page=10`);
+    run = (rs.workflow_runs||[]).find(x => (x.display_title||"").includes(inputs.demande)); }
+  if(!run) throw new Error("le traitement n'a pas démarré (vérifier l'onglet Actions)");
+  while(run.status !== "completed"){ await sleep(4000); run = await ghApi(`/actions/runs/${run.id}`); onTick && onTick(run, Math.round((Date.now()-t0)/1000)); }
+  if(run.conclusion !== "success") throw new Error(`traitement en échec · <a href="${run.html_url}" target="_blank">voir le détail</a>`);
+  return run;
+}
+const demandeId = p => p + "-" + new Date().toISOString().replace(/\D/g,"").slice(0,14);
+function aMsg(cls, html){ document.getElementById("aRun").innerHTML = html ? `<span class="banner ${cls}">${html}</span>` : ""; }
+async function loadAdmin(fromApi=false){
+  const get = p => fromApi && ghToken() ? ghFile(p).catch(()=>j(p)) : j(p);
+  [S.orgs, S.admin] = await Promise.all([get("ref/organisations.json"), get("admin/magasins.json")]);
+}
+function adminRows(){
+  // une ligne par organisation Openbravo (par search key), complétée par la configuration en vigueur
+  const orgs = (S.orgs||{}).organisations || [], conf = (S.orgs||{}).config_actuelle || {};
+  const saved = {}; ((S.admin||{}).magasins||[]).forEach(m => saved[m.search_key||m.code] = m);
+  const rows = orgs.map(o => ({o, e: S.aEdit[o.code] || (S.aEdit[o.code] = Object.assign(
+    {code:o.code, search_key:o.code, api_name:o.nom, label:o.nom, warehouse:o.entrepots[0]||"", type:"Magasin", ventes:false, stocks:false, reappro:false, prefixe_commande:""},
+    conf[o.code]||{}, saved[o.code]||{}, {search_key:o.code, api_name:o.nom}))}));
+  Object.entries(saved).forEach(([sk, m]) => { if(!orgs.some(o=>o.code===sk)) rows.push({o:{code:sk, nom:m.api_name, entrepots:[m.warehouse], magasin:true, absent:true}, e: S.aEdit[sk] || (S.aEdit[sk] = Object.assign({}, m))}); });
+  return rows;
+}
+function renderAdmin(){
+  S.aEdit = S.aEdit || {};
+  document.getElementById("aGhState").innerHTML = document.getElementById("ghState").innerHTML.replace('id="ghEdit"', 'class="ghEdit"');
+  if(!S.orgs){ document.getElementById("aTable").innerHTML = `<div class="empty">Liste des magasins pas encore disponible : cliquez sur « Relire les magasins Openbravo ».</div>`; return; }
+  document.getElementById("aSub").textContent = `Choisissez les magasins proposés dans chaque onglet. Liste Openbravo relue le ${new Date(S.orgs.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})} (chaque nuit ou avec le bouton).`;
+  const all = document.getElementById("aAll").checked;
+  const rows = adminRows().filter(r => all || r.o.magasin || r.e.ventes || r.e.stocks || r.e.reappro);
+  const cb = (r,k) => `<input type="checkbox" data-k="${k}" ${r.e[k]?"checked":""}>`;
+  document.getElementById("aTable").innerHTML = `<table><tr><th>Code</th><th>Organisation Openbravo</th><th>Libellé affiché</th><th>Entrepôt</th><th>Type</th><th class="n">Ventes</th><th class="n">Stocks</th><th class="n">Réappro</th><th>Préfixe des commandes</th></tr>${
+    rows.map(r => { const whs = [...new Set([...(r.o.entrepots||[]), r.e.warehouse].filter(Boolean))];
+      return `<tr data-org="${esc(r.o.code)}"><td>${esc(r.o.code)}${r.e.code!==r.o.code?`<div class="maj">historique : ${esc(r.e.code)}</div>`:""}</td>
+        <td>${esc(r.o.nom||"")}<div class="maj">${r.o.absent?'<span class="st crit">introuvable dans Openbravo</span>':esc(r.o.parent||"")}</div></td>
+        <td><input type="text" data-k="label" value="${esc(r.e.label||"")}" style="width:180px"></td>
+        <td>${whs.length>1||!whs.length ? `<select data-k="warehouse">${whs.map(w=>`<option ${w===r.e.warehouse?"selected":""}>${esc(w)}</option>`).join("")}</select>` : esc(whs[0])}</td>
+        <td><select data-k="type">${["Magasin","Web"].map(t=>`<option ${t===r.e.type?"selected":""}>${t}</option>`).join("")}</select></td>
+        <td class="n">${cb(r,"ventes")}</td><td class="n">${cb(r,"stocks")}</td><td class="n">${cb(r,"reappro")}</td>
+        <td><input type="text" data-k="prefixe_commande" value="${esc(r.e.prefixe_commande||"")}" placeholder="ex. FR11-PO-" style="width:110px" ${r.e.reappro?"":"disabled"}></td></tr>`; }).join("")}</table>`;
+}
+document.getElementById("aTable").addEventListener("change", e => {
+  const tr = e.target.closest("tr[data-org]"), k = e.target.dataset.k; if(!tr || !k) return;
+  const ed = S.aEdit[tr.dataset.org]; ed[k] = e.target.type==="checkbox" ? e.target.checked : e.target.value.trim();
+  if(k==="reappro" && ed.reappro && !ed.prefixe_commande) ed.prefixe_commande = `${ed.code}-PO-`;
+  renderAdmin();
+});
+document.getElementById("aAll").onchange = renderAdmin;
+document.getElementById("aGhState").addEventListener("click", e => { if(e.target.classList.contains("ghEdit")){ e.preventDefault(); openGh(); } });
+document.getElementById("btnOrgs").onclick = async () => {
+  if(!ghToken()) return openGh();
+  const btn = document.getElementById("btnOrgs"); btn.disabled = true;
+  try { aMsg("run", "Lecture des organisations Openbravo…");
+    await runWorkflow("admin.yml", {action:"organisations", demande:demandeId("ORG")}, (run, s) => aMsg("run", `Lecture des organisations… ${s} s · <a href="${run.html_url}" target="_blank">suivre</a>`));
+    await loadAdmin(true); aMsg("ok", "Liste des magasins à jour"); renderAdmin();
+  } catch(err){ aMsg("ko", "Échec : " + (err.message||err)); }
+  btn.disabled = false;
+};
+document.getElementById("btnSaveAdmin").onclick = async () => {
+  if(!ghToken()) return openGh();
+  const ms = adminRows().map(r=>r.e).filter(e => e.ventes || e.stocks || e.reappro)
+    .map(e => ({code:e.code, search_key:e.search_key, api_name:e.api_name, label:e.label||e.api_name, warehouse:e.warehouse, type:e.type,
+                ventes:!!e.ventes, stocks:!!e.stocks, reappro:!!e.reappro, prefixe_commande:e.reappro ? (e.prefixe_commande || `${e.code}-PO-`) : undefined}));
+  if(!ms.some(m=>m.ventes||m.stocks)) return aMsg("ko", "Cochez au moins un magasin pour les ventes ou les stocks.");
+  const sansEnt = ms.filter(m=>!m.warehouse); if(sansEnt.length) return aMsg("ko", `Entrepôt manquant : ${sansEnt.map(m=>esc(m.label)).join(", ")}`);
+  const body = JSON.stringify({maj:new Date().toISOString(), magasins:ms}, null, 2);
+  try { aMsg("run", "Enregistrement…");
+    const path = "docs/data/admin/magasins.json"; let sha; try { sha = (await ghApi(`/contents/${path}?ref=main`)).sha; } catch(_) {}
+    await ghApi(`/contents/${path}`, {method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({message:`Administration : magasins par onglet (${ms.length})`, content:b64utf8(body + "\n"), sha, branch:"main"})});
+    S.admin = JSON.parse(body); fillStoreSelect();
+    if(confirm("Magasins enregistrés.\n\nLancer maintenant la collecte de nuit (ventes, stocks, réappro) pour appliquer les changements ?")){
+      await runWorkflow("nuit.yml", {});
+      aMsg("ok", `Enregistré · collecte lancée (quelques minutes) · <a href="https://github.com/${GH.owner}/${GH.repo}/actions" target="_blank">suivre</a>`);
+    } else aMsg("ok", "Enregistré · appliqué à la prochaine collecte");
+  } catch(err){ aMsg("ko", "Enregistrement impossible : " + esc(err.message||err) + (String(err.message).includes("403") ? " — le jeton doit avoir Contents : Read and write" : "")); }
+};
+// magasins proposés dans les sélecteurs Ventes / Stocks selon l'administration
+function tabStores(tab){
+  const base = tab==="stocks" ? Object.keys((S.photo||{}).magasins||{}) : S.meta.magasins.filter(m => m.ventes!==false).map(m=>m.code);
+  const a = (S.admin||{}).magasins; if(!a) return base;
+  const known = new Set(a.map(m=>m.code)), ok = new Set(a.filter(m=>m[tab]).map(m=>m.code));
+  return base.filter(c => !known.has(c) || ok.has(c));   // les entrepôts hors administration (central) restent visibles
+}
+function fillStoreSelect(){
+  if(!S.meta) return;
+  const codes = tabStores(S.tab==="stocks" ? "stocks" : "ventes");
+  if(S.store!=="ALL" && !codes.includes(S.store)) S.store = "ALL";
+  document.getElementById("fStore").innerHTML = `<option value="ALL">Tous les magasins</option>` + codes.map(c=>`<option value="${esc(c)}" ${c===S.store?"selected":""}>${esc(storeLabel(c))}</option>`).join("");
+}
+
+function render(){ S.tab==="ventes" ? renderVentes() : S.tab==="stocks" ? renderStocks() : S.tab==="admin" ? renderAdmin() : renderReappro(); }
 
 document.querySelectorAll("nav button").forEach(btn => btn.onclick = () => {
   S.tab = btn.dataset.tab;
@@ -655,10 +767,12 @@ document.querySelectorAll("nav button").forEach(btn => btn.onclick = () => {
   document.getElementById("tab-ventes").classList.toggle("hidden", S.tab!=="ventes");
   document.getElementById("tab-stocks").classList.toggle("hidden", S.tab!=="stocks");
   document.getElementById("tab-reappro").classList.toggle("hidden", S.tab!=="reappro");
+  document.getElementById("tab-admin").classList.toggle("hidden", S.tab!=="admin");
   document.getElementById("lblDate").classList.toggle("hidden", S.tab!=="ventes");
-  document.getElementById("lblStore").classList.toggle("hidden", S.tab==="reappro");
+  document.getElementById("lblStore").classList.toggle("hidden", S.tab==="reappro" || S.tab==="admin");
   document.getElementById("lblRStore").classList.toggle("hidden", S.tab!=="reappro");
-  document.getElementById("note").classList.toggle("hidden", S.tab==="reappro");
+  document.getElementById("note").classList.toggle("hidden", S.tab==="reappro" || S.tab==="admin");
+  fillStoreSelect();
   render();
 });
 document.getElementById("fRStore").onchange = async e => { S.rstore = e.target.value; await loadReappro(); render(); };
