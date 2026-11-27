@@ -255,7 +255,11 @@ const legend = (el, items) => document.getElementById(el).innerHTML = items.map(
 const dataTable = (el, head, rows) => document.getElementById(el).innerHTML = `<table><tr>${head.map((h,i)=>`<th class="${i?'n':''}">${esc(h)}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i?'n':''}">${c}</td>`).join("")}</tr>`).join("")}</table>`;
 
 function storeLabel(code){ return ([...S.meta.magasins, ...(S.meta.entrepots||[]), ...((S.photo&&S.photo.emplacements)||[])].find(m=>m.code===code)||{label:code}).label; }
-function block(day){ if(!day) return null; return S.store==="ALL" ? day.total : (day.magasins||{})[S.store]; }
+// magasin sans bloc dans le fichier du jour (ajouté après la collecte, ou jour antérieur à son ajout) : bloc vide,
+// affiché comme un magasin sans vente (tuiles à 0, tableaux vides)
+const EMPTY_BLOCK = {kpi:{ca_ttc:0, ca_ht:0, tickets:0, articles:0, panier:null, upt:null, marge:0, taux_marge:null, retours_ttc:0, retours_tickets:0, taux_retour:null, remise:0, taux_remise:null},
+                     par_heure:Array(24).fill(0), tickets_heure:Array(24).fill(0), vendeurs:[], produits:[], paiements:{}, secteurs:{}};
+function block(day){ if(!day) return null; return S.store==="ALL" ? day.total : ((day.magasins||{})[S.store] || EMPTY_BLOCK); }
 function histDay(date){
   const rows = (S.hist||[]).filter(r => r.date===date && (S.store==="ALL" || r.magasin===S.store));
   if(!rows.length) return null;
@@ -287,7 +291,7 @@ function renderVentes(){
   }
   CMP = cmpLbl;
   document.querySelectorAll("#tab-ventes > .grid.g2").forEach(g => g.classList.toggle("hidden", !k));
-  if(!k){ document.getElementById("tiles").innerHTML = `<div class="card empty" style="grid-column:1/-1">Aucune vente ${S.store==="ALL" ? "" : `pour ${esc(storeLabel(S.store))} `}sur cette journée.</div>`; return; }
+  if(!k){ document.getElementById("tiles").innerHTML = `<div class="card empty" style="grid-column:1/-1">Aucune donnée pour cette journée.</div>`; return; }
   const tiles = [
     ["CA TTC "+(live?"en cours":"de la journée"), eur0.format(k.ca_ttc), delta(k.ca_ttc, p&&p.ca_ttc), true],
     ["Tickets", n0.format(k.tickets), delta(k.tickets, p&&p.tickets)],
