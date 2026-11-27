@@ -1,0 +1,62 @@
+{
+  "maj": "2026-11-27T13:41:27.429Z",
+  "magasins": [
+    {
+      "code": "0001",
+      "search_key": "0001",
+      "api_name": "Villeneuve d'ascq - rue Papin",
+      "label": "Villeneuve d'Ascq",
+      "warehouse": "0001",
+      "type": "Magasin",
+      "ventes": true,
+      "stocks": true,
+      "reappro": true,
+      "prefixe_commande": "0001-PO-"
+    },
+    {
+      "code": "0002",
+      "search_key": "0002",
+      "api_name": "Passy - Rue des Pres Moulin",
+      "label": "Passy",
+      "warehouse": "0002",
+      "type": "Magasin",
+      "ventes": true,
+      "stocks": true,
+      "reappro": false
+    },
+    {
+      "code": "0003",
+      "search_key": "0003",
+      "api_name": "Levallois -  rue Anatole France",
+      "label": "Levallois",
+      "warehouse": "0003",
+      "type": "Magasin",
+      "ventes": true,
+      "stocks": true,
+      "reappro": false
+    },
+    {
+      "code": "0011",
+      "search_key": "0011",
+      "api_name": "Courcelles - Store",
+      "label": "Courcelles (franchisé)",
+      "warehouse": "0011",
+      "type": "Magasin",
+      "ventes": true,
+      "stocks": true,
+      "reappro": true,
+      "prefixe_commande": "FR11-PO-"
+    },
+    {
+      "code": "ECOM",
+      "search_key": "E-Commerce",
+      "api_name": "E-Commerce",
+      "label": "E-Commerce",
+      "warehouse": "E-Commerce",
+      "type": "Web",
+      "ventes": true,
+      "stocks": true,
+      "reappro": false
+    }
+  ]
+}
