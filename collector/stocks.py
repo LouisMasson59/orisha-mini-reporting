@@ -22,7 +22,8 @@ def _sales_window(code: str, day: date, n_days: int) -> dict:
     return qty
 
 
-def collect(client, refs: dict, day: date, now_iso: str) -> None:
+def collect(client, refs: dict, day: date, now_iso: str) -> dict:
+    """Photo de stock du jour. Renvoie {code magasin / entrepôt: {sk: quantité}} (contrôle de la valorisation)."""
     win = int(CONFIG["sales_window_days"])
     over = int(CONFIG["overstock_days"])
     couts = refs.get("couts", {})
@@ -42,6 +43,7 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             st = extras.setdefault(wh, {"code": wh, "label": f"Entrepôt {wh}", "warehouse": wh, "type": "Entrepôt"})
         by_store[st["code"]].append(rec)
     locations = CONFIG["stores"] + list(extras.values())
+    quantites = {}
     for st in locations:
         sells = st in CONFIG["stores"]  # un entrepôt central ne vend pas : pas de rupture / dormant / couverture
         stock = defaultdict(float)
@@ -51,6 +53,7 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
             sk = R.sk_of(refs, rec)
             stock[sk] += num(rec.get("quantityOnHand"))
             names[sk] = pi.get("name") or rec.get("product")
+        quantites[str(st["code"])] = dict(stock)
         sold = _sales_window(st["code"], day, win) if sells else {}
         historique = sum(sold.values()) > 0  # magasin sans aucune vente sur la période : pas de verdict « dormant »
         minis = {}
@@ -103,3 +106,4 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
     photo["emplacements"] = [{"code": s["code"], "label": s["label"], "type": s.get("type", "Magasin")} for s in locations]
     save_json("stocks/photo.json", photo)
     upsert("stocks/historique.json", rows, ("date", "magasin", "secteur"))
+    return quantites

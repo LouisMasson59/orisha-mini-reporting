@@ -54,20 +54,21 @@ def build(client) -> dict:
                     couts[sk], origine[sk] = v, "liste d'achat"
         except SystemExit:
             pass
+    prix_fournisseur = {}  # prix d'achat du fournisseur habituel : valorisation des entrées sans prix
     for p in raw_prods:
         sk = p.get("searchKey")
-        if sk in couts:
-            continue
         lines = [l for l in p.get("productPurchasing") or [] if l.get("isActive", True) is not False]
         l = next((x for x in lines if x.get("currentVendor")), lines[0] if lines else None)
         v = l and (num(l.get("purchaseOrderPrice")) or num(l.get("lastPurchasePrice")))
         if v:
-            couts[sk], origine[sk] = v, "prix fournisseur"
+            prix_fournisseur[sk] = v
+            if sk not in couts:
+                couts[sk], origine[sk] = v, "prix fournisseur"
     nb = defaultdict(int)
     for v in origine.values():
         nb[v] += 1
     source = " · ".join(f"{k} ({n})" for k, n in sorted(nb.items(), key=lambda x: -x[1])) or "aucun coût"
-    refs = {"maj": now_local().isoformat(timespec="seconds"), "categories": cats, "produits": prods, "couts": couts, "source_couts": source, "noms": noms, "fournisseurs": fournisseurs}
+    refs = {"maj": now_local().isoformat(timespec="seconds"), "categories": cats, "produits": prods, "couts": couts, "source_couts": source, "prix_fournisseur": prix_fournisseur, "noms": noms, "fournisseurs": fournisseurs}
     save_json("ref/refs.json", refs)
     return refs
 

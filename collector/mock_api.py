@@ -156,7 +156,13 @@ class MockAPI:
             return self._stock(self.by_wh.get(p["warehouse"]), parse_day(p.get("_day", today().isoformat())))
         if path == "ShipmentInOut/goodsReceiptByMovementDateRange":
             d1, d2 = parse_day(p["dateFrom"]), parse_day(p["dateTo"])
-            return [r for r in self._receipts() if d1 <= parse_day(r["movementDate"]) <= d2]
+            return [r for r in self._receipts() + FR.receipts() if d1 <= parse_day(r["movementDate"]) <= d2]
+        if path.startswith("StockTransaction/"):
+            return FR.stock_transactions(path.split("/", 1)[1], p.get("lastUpdated", ""))
+        if path == "Order/byDocumentNumbers":
+            return FR.order_by_numbers(p.get("documentNumbers"))
+        if path == "Invoice/byOrderDocumentNo":
+            return FR.invoices_by_order(p.get("orderDocumentNo"))
         return []
 
     # ------------------------------------------------------------------ ventes

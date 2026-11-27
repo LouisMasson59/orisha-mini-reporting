@@ -128,3 +128,42 @@ def vendors() -> list:
 TAX_RATES = [{"searchKey": "VAT 20%", "name": "VAT 20%", "taxCategory": "Normal", "rate": 20},
              {"searchKey": "VAT 5.5%", "name": "VAT 5.5%", "taxCategory": "Reduced", "rate": 5.5},
              {"searchKey": "VAT 0%", "name": "VAT 0%", "taxCategory": "Exempt", "rate": 0}]
+
+
+# ---- mouvements de stock (valorisation) : inventaire d'ouverture, une réception facturée, une vente
+def _mv(i, d, sk, typ, q, line=None):
+    return {"id": f"MV-{i:04d}", "warehouse": WH, "organization": ORG["name"], "movementDate": d.isoformat(),
+            "creationDate": f"{d.isoformat()} 10:{i % 60:02d}:00", "product": PRODUITS[sk][0],
+            "product_info": {"searchKey": sk, "name": PRODUITS[sk][0]}, "movementType": typ, "movementQty": q, "inOutLineId": line}
+
+
+def stock_transactions(endpoint: str, last_updated: str) -> list:
+    t = today()
+    inv = [_mv(i, t - timedelta(days=7), sk, "I+", q) for i, (sk, q) in enumerate(STOCK.items())]
+    out = {"byInventory": inv,
+           "byVendor": [_mv(100, t - timedelta(days=5), "COUSSIN-DECO-GREY", "V+", 6, "RL-FR11-0000-0")],
+           "byCustomer": [_mv(200, t - timedelta(days=3), "COUSSIN-DECO-GREY", "C-", -6)]}.get(endpoint, [])
+    return [m for m in out if m["creationDate"] > last_updated]
+
+
+def receipts() -> list:
+    t = today()
+    return [{"id": "R-FR11-0000", "documentNo": "FR11-GR-0000", "movementDate": (t - timedelta(days=5)).isoformat(), "organization": "0011",
+             "warehouse": WH, "orderDocumentNo": "FR11-PO-0000", "documentStatus": "CO", "isSale": False, "isReturn": False,
+             "businessPartner": "SUP-MEUBLEDESIGN",
+             "lines": [{"id": "RL-FR11-0000-0", "product": PRODUITS["COUSSIN-DECO-GREY"][0], "product_info": {"searchKey": "COUSSIN-DECO-GREY"},
+                        "movementQuantity": 6, "orderLine": {"id": "FR11-PO-0000-0"}}]}]
+
+
+def order_by_numbers(numbers: str) -> list:
+    if "FR11-PO-0000" not in (numbers or ""):
+        return []
+    return [{"documentNo": "FR11-PO-0000", "lines": [{"id": "FR11-PO-0000-0", "product": PRODUITS["COUSSIN-DECO-GREY"][0],
+                                                     "product_info": {"searchKey": "COUSSIN-DECO-GREY"}, "netUnitPrice": 12.0, "orderedQuantity": 6}]}]
+
+
+def invoices_by_order(doc: str) -> list:
+    if doc != "FR11-PO-0000":
+        return []
+    return [{"documentNo": "FAC-MD-0000", "isSale": False, "lines": [{"product": PRODUITS["COUSSIN-DECO-GREY"][0], "product_info": {"searchKey": "COUSSIN-DECO-GREY"},
+                                                                        "invoicedQuantity": 6, "unitPrice": 11.5}]}]

@@ -135,3 +135,13 @@ pour les collectes suivantes ; la page propose de lancer la collecte de nuit tou
 Le réappro s'appuie sur l'assortiment du magasin (`Product/byStore`) : seuls ses articles sont commandables ; un article
 de l'assortiment sans seuil apparaît « Sans seuil » (commande manuelle possible) ; un seuil sur un article hors
 assortiment est signalé en anomalie et ignoré. Un magasin sans fichier de seuils fonctionne (tout est « sans seuil »).
+
+## Valorisation du stock (PMP / dernier prix d'achat)
+
+`collector/valorisation.py`, chaque nuit : rejoue les mouvements de stock de l'API (`StockTransaction/by*`, lecture
+incrémentale `lastUpdated`, journal dans `docs/data/valo/`). Réception fournisseur : prix de la **facture** d'achat
+de la commande (même article), sinon prix de la **ligne de commande** — rejoué chaque nuit, donc corrigé quand la facture
+arrive ; PMP = (stock avant × PMP + qté × prix) / stock après ; dernier prix d'achat = prix de la dernière réception.
+Entrée sans prix (inventaire d'ouverture…) : prix du fournisseur habituel. Sorties au PMP. Pas de frais d'approche.
+Historique de valeur reconstruit jour par jour depuis le premier mouvement ; écart avec le stock de l'API recalé et compté.
+Méthode affichée par magasin : **Administration › Valorisation** (PMP ou dernier prix d'achat).

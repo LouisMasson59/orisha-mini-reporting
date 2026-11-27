@@ -76,8 +76,15 @@ def main():
         veille = day - timedelta(days=1)
         n = ventes.collect(client, rf, veille, veille, now_iso)
         print(f"Clôture ventes {veille} : {n} commandes")
-        stocks.collect(client, rf, day, now_iso)
+        quantites = stocks.collect(client, rf, day, now_iso)
         print("Photo de stock enregistrée")
+        try:
+            from . import valorisation
+            v = valorisation.collect(client, rf, day, now_iso, quantites)
+            print("Valorisation : " + ", ".join(f"{c} {m['valeur_pmp']:.0f} € PMP / {m['valeur_dpa']:.0f} € DPA ({m['mouvements']} mvts, {m['ecarts_recales']} écarts)"
+                                                 for c, m in v["magasins"].items()))
+        except (SystemExit, Exception) as e:  # la valorisation ne doit pas faire échouer la collecte de nuit
+            print(f"Valorisation non calculée : {e!r}")
         achats.collect(client, rf, day, now_iso)
         print("Achats / fournisseurs mis à jour")
         try:
