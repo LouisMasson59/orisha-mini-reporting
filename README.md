@@ -125,7 +125,9 @@ docs/
 Onglet **⚙ Administration** du tableau de bord : liste des organisations Openbravo (relue chaque nuit ou avec le bouton
 « Relire les magasins Openbravo », workflow `admin.yml` → `docs/data/ref/organisations.json`). Pour chaque magasin :
 libellé, entrepôt, type, et les onglets où il apparaît (**Ventes**, **Stocks**, **Réappro** + préfixe de numérotation des
-commandes). L'enregistrement écrit `docs/data/admin/magasins.json`, qui remplace `config.json` (stores, reappro.magasins)
+commandes) et sa **couleur** dans les graphiques ; les entrepôts hors magasin (dépôt central…) peuvent être masqués de
+l'onglet Stocks. Un **mot de passe** (empreinte SHA-256 dans le fichier) verrouille l'onglet : c'est un verrou d'interface,
+l'écriture reste protégée par le jeton GitHub. L'enregistrement écrit `docs/data/admin/magasins.json`, qui remplace `config.json` (stores, reappro.magasins)
 pour les collectes suivantes ; la page propose de lancer la collecte de nuit tout de suite.
 
 ## Assortiment (réappro)

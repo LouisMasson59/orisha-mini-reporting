@@ -23,6 +23,7 @@ def _apply_admin(cfg: dict) -> None:
     base = lambda m: {"code": m["code"], "search_key": m.get("search_key", m["code"]), "api_name": m.get("api_name") or m["code"],
                       "label": m.get("label") or m.get("api_name") or m["code"], "warehouse": m.get("warehouse") or m["code"],
                       "type": m.get("type", "Magasin")}
+    ms = [m for m in ms if m.get("type") != "Entrepôt"]  # entrepôts hors magasin : affichage seulement (onglet Stocks)
     stores = [dict(base(m), ventes=bool(m.get("ventes")), stocks=bool(m.get("stocks"))) for m in ms if m.get("ventes") or m.get("stocks")]
     if stores:
         cfg["stores"] = stores

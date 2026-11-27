@@ -65,6 +65,8 @@ def collect(client, refs: dict, day: date, now_iso: str) -> None:
         ruptures, dormants = [], []
         sans_cout = 0
         for sk in set(stock) | set(sold) | set(minis):
+            if R.non_stocke(refs, sk):  # services, frais, garanties : hors stock
+                continue
             q, s = max(0.0, stock.get(sk, 0.0)), sold.get(sk, 0.0)  # stock négatif ramené à 0 (compté à part)
             sec = R.sector(refs, sk)
             nom = R.product_name(refs, sk, names.get(sk))

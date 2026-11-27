@@ -4,6 +4,12 @@ from collections import defaultdict
 from .store import CONFIG, load_json, num, save_json, now_local
 
 
+def est_stocke(p: dict) -> bool:
+    """Article géré en stock : type « Item » (pas service, frais, ressource…) et suivi de quantité actif."""
+    t = str(p.get("productType") or "I").strip().lower()
+    return t in ("i", "item", "article") and p.get("stocked", True) is not False
+
+
 def _fr(x: dict) -> str | None:
     """Nom traduit en français s'il existe (l'anglais est la langue maître), sinon le nom."""
     for t in x.get("translations") or []:
@@ -15,7 +21,8 @@ def _fr(x: dict) -> str | None:
 def build(client) -> dict:
     cats = {c.get("searchKey"): {"nom": _fr(c), "parent": c.get("parentCategory")} for c in client.get("ProductCategory")}
     raw_prods = client.get("Product")
-    prods = {p.get("searchKey"): {"nom": _fr(p), "cat": p.get("productCategory")} for p in raw_prods}
+    prods = {p.get("searchKey"): {"nom": _fr(p), "cat": p.get("productCategory"),
+                                  **({} if est_stocke(p) else {"non_stocke": True})} for p in raw_prods}
     fournisseurs = {}
     try:
         for bp in client.get("BusinessPartner/byVendor", {"isVendor": "true"}):
@@ -63,6 +70,10 @@ def build(client) -> dict:
     refs = {"maj": now_local().isoformat(timespec="seconds"), "categories": cats, "produits": prods, "couts": couts, "source_couts": source, "noms": noms, "fournisseurs": fournisseurs}
     save_json("ref/refs.json", refs)
     return refs
+
+
+def non_stocke(refs: dict, sk: str) -> bool:
+    return bool((refs.get("produits", {}).get(sk) or {}).get("non_stocke"))
 
 
 def load(client) -> dict:

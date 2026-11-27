@@ -229,6 +229,8 @@ def calculer(client, code: str, day: date, now_iso: str, seuils_json: str | None
     if assort is None:
         seuils, hors = tous_seuils, []
     else:
+        assort = {sk: p for sk, p in assort.items() if R.est_stocke(p)}  # services / non stockés : pas de réappro
+        _ASSORT[code] = assort
         seuils = {sk: v for sk, v in tous_seuils.items() if sk in assort}
         hors = sorted(sk for sk in tous_seuils if sk not in assort)
         for sk in assort:  # article de l'assortiment sans seuil : suivi, jamais proposé automatiquement

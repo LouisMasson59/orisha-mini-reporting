@@ -141,7 +141,7 @@
       <div class="card"><h3>Stock par secteur</h3><div class="sub" id="subHeat">Valeur et couverture (jours de vente)</div><div id="heat"></div></div>
     </div>
     <div class="grid g2" style="margin-top:16px">
-      <div class="card"><h3>Ruptures sur articles vendus</h3><div class="sub">Stock nul alors que l'article s'est vendu sur 30 jours</div><div id="ruptures"></div></div>
+      <div class="card"><h3>Ruptures</h3><div class="sub">Stock nul sur un article vendu sur 30 jours ou suivi en réappro (mini &gt; 0)</div><div id="ruptures"></div></div>
       <div class="card"><h3>Stock dormant</h3><div class="sub">En stock, aucune vente sur 30 jours</div><div id="dormants"></div></div>
     </div>
     <div class="card" style="margin-top:16px"><h3>Performance fournisseurs</h3><div class="sub">Sur les 30 derniers jours · ✓ ≥ 95 % · ! 85–95 % · ✕ &lt; 85 %</div><div id="fournisseurs"></div></div>
@@ -194,11 +194,16 @@
       <div id="aRun" class="maj"></div>
       <div class="tb-right">
         <span id="aGhState" class="maj"></span>
+        <button class="btn ghost" id="btnPwd" title="Définir ou changer le mot de passe de cet onglet">🔒 Mot de passe</button>
         <button class="btn ghost" id="btnOrgs">↻ Relire les magasins Openbravo</button>
         <button class="btn primary" id="btnSaveAdmin">Enregistrer</button>
       </div>
     </div>
-    <div class="card" style="margin-top:16px"><h3>Magasins par onglet</h3>
+    <div class="card" id="aLock" style="margin-top:16px;max-width:420px">
+      <h3>Administration protégée</h3><div class="sub">Saisissez le mot de passe d'administration.</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><input type="password" id="aPwdIn" placeholder="Mot de passe" style="flex:1;font:inherit;padding:8px 10px;border:1px solid #d9d6e3;border-radius:8px"><button class="btn primary" id="aPwdOk">Entrer</button></div>
+      <div id="aPwdErr" class="maj" style="color:var(--crit);margin-top:6px"></div></div>
+    <div class="card" id="aMain" style="margin-top:16px"><h3>Magasins par onglet</h3>
       <div class="sub" id="aSub">Choisissez les magasins proposés dans chaque onglet. La liste vient d'Openbravo (organisations avec entrepôt) et se relit chaque nuit ou avec le bouton.</div>
       <div class="rfilters"><label><input type="checkbox" id="aAll"> Afficher aussi les organisations sans entrepôt (regroupements)</label></div>
       <div id="aTable" class="tscroll"></div>
@@ -220,6 +225,14 @@
 
 <script>
 const STORE_COLORS = {"0001":"#6946AA","0002":"#E8005F","0003":"#12B5A4","ECOM":"#D69800","CW":"#8a8796"}; // validées (contraste : légende + tableau)
+const EXTRA_COLORS = ["#2F6FDB","#C2410C","#15803D","#9D174D","#0E7490","#7C3AED","#B45309"];
+function storeColor(c){  // couleur choisie dans l'Administration, sinon couleur par défaut
+  const a = (((S.admin||{}).magasins)||[]).find(m => m.code===c);
+  if(a && a.couleur) return a.couleur;
+  if(STORE_COLORS[c]) return STORE_COLORS[c];
+  const codes = [...new Set([...(S.meta?S.meta.magasins.map(m=>m.code):[]), c])].filter(x=>!STORE_COLORS[x]);
+  return EXTRA_COLORS[Math.max(0, codes.indexOf(c)) % EXTRA_COLORS.length];
+}
 const PRIMARY = "#482882", GHOST = "#b9b5c6", GRID = "#ececf1";
 const S = {store:"ALL", date:null, tab:"ventes"};
 let CMP = "vs même jour S-1";
@@ -323,8 +336,8 @@ function renderVentes(){
   const dates = []; for(let i=29;i>=0;i--) dates.push(addDays(tEnd,-i));
   const stores = S.store==="ALL" ? tabStores("ventes") : [S.store];
   const val = (d,c) => { const r = S.hist.find(x=>x.date===d && x.magasin===c); return r && r.tickets ? r.ca_ttc : null; }; // jour fermé = trou
-  draw("cTrend", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c => lineDs(storeLabel(c), dates.map(d=>val(d,c)), STORE_COLORS[c]||PRIMARY))}});
-  legend("legTrend", stores.length>1 ? stores.map(c=>[storeLabel(c), STORE_COLORS[c]]) : []);
+  draw("cTrend", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c => lineDs(storeLabel(c), dates.map(d=>val(d,c)), storeColor(c)))}});
+  legend("legTrend", stores.length>1 ? stores.map(c=>[storeLabel(c), storeColor(c)]) : []);
   dataTable("tTrend", ["Date", ...stores.map(storeLabel)], dates.map(d => [shortDate(d), ...stores.map(c => { const v=val(d,c); return v==null?"–":eur0.format(v); })]));
 
   // Top produits
@@ -349,7 +362,7 @@ function renderVentes(){
   if(showMag){
     const ms = S.meta.magasins.filter(m => tabStores("ventes").includes(m.code)).map(m => ({code:m.code, label:m.label, k:(S.jour.magasins[m.code]||{}).kpi||{}}));
     const maxM = Math.max(1, ...ms.map(m=>m.k.ca_ttc||0));
-    document.getElementById("magasins").innerHTML = `<table><tr><th>Magasin</th><th class="n">CA TTC</th><th class="n">Tickets</th><th class="n">Panier</th><th style="width:26%"></th></tr>${ms.map(m=>`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${STORE_COLORS[m.code]};margin-right:6px"></i>${esc(m.label)}</td><td class="n">${eur0.format(m.k.ca_ttc||0)}</td><td class="n">${n0.format(m.k.tickets||0)}</td><td class="n">${m.k.panier?eur0.format(m.k.panier):"–"}</td><td><div class="bar" style="width:${(m.k.ca_ttc||0)/maxM*100}%"></div></td></tr>`).join("")}</table>`;
+    document.getElementById("magasins").innerHTML = `<table><tr><th>Magasin</th><th class="n">CA TTC</th><th class="n">Tickets</th><th class="n">Panier</th><th style="width:26%"></th></tr>${ms.map(m=>`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${storeColor(m.code)};margin-right:6px"></i>${esc(m.label)}</td><td class="n">${eur0.format(m.k.ca_ttc||0)}</td><td class="n">${n0.format(m.k.tickets||0)}</td><td class="n">${m.k.panier?eur0.format(m.k.panier):"–"}</td><td><div class="bar" style="width:${(m.k.ca_ttc||0)/maxM*100}%"></div></td></tr>`).join("")}</table>`;
   }
 }
 
@@ -364,26 +377,32 @@ function renderStocks(){
   stores.forEach(c => { const m = ph.magasins[c]; if(!m) return;
     Object.entries(m.secteurs).forEach(([s,x]) => { val+=x.valeur||0; rup+=x.ruptures; dorm+=x.dormants; if(x.surstock) surs++;
       const a = secAgg[s] = secAgg[s] || {}; a[c] = x; }); });
-  const f = (fo&&fo.fournisseurs)||[];
+  // indicateurs du magasin choisi (si ses commandes ont pu lui être rattachées ; sinon vue réseau, signalée)
+  const pm = S.store!=="ALL" && fo && fo.par_magasin ? fo.par_magasin[S.store] : null;
+  const fm = pm && (pm.fournisseurs.length || !Object.keys(fo.commandes_sans_magasin||{}).length) ? pm : null;
+  const f = fm ? fm.fournisseurs : (fo&&fo.fournisseurs)||[];
   const retard = f.reduce((a,x)=>a+(x.valeur_retard||0),0);
-  const cmd = f.filter(x=>x.taux_service_30j!=null), ts = cmd.length ? cmd.reduce((a,x)=>a+x.taux_service_30j,0)/cmd.length : null;
-  const pc = f.filter(x=>x.ponctualite_30j!=null), pu = pc.length ? pc.reduce((a,x)=>a+x.ponctualite_30j,0)/pc.length : null;
+  const sumOf = k => f.reduce((a,x)=>a+(x[k]||0),0);
+  // pondérés par les quantités / réceptions (et non moyenne simple des fournisseurs)
+  const cmd = f.filter(x=>x.taux_service_30j!=null), pc = f.filter(x=>x.ponctualite_30j!=null);
+  const ts = "cmd_30j" in (f[0]||{}) ? (sumOf("cmd_30j") ? sumOf("recu_30j")/sumOf("cmd_30j")*100 : null) : (cmd.length ? cmd.reduce((a,x)=>a+x.taux_service_30j,0)/cmd.length : null);
+  const pu = "rec_rapprochees_30j" in (f[0]||{}) ? (sumOf("rec_rapprochees_30j") ? sumOf("rec_a_l_heure_30j")/sumOf("rec_rapprochees_30j")*100 : null) : (pc.length ? pc.reduce((a,x)=>a+x.ponctualite_30j,0)/pc.length : null);
   const tiles = [
     ["Valeur de stock (au coût)", compact(val), `<div class="delta">photo du ${frDate(ph.date)}</div>`, true],
-    ["Ruptures sur articles vendus", n0.format(rup), `<div class="delta">${stores.length>1?"tous magasins":esc(storeLabel(S.store))}</div>`],
+    ["Ruptures", n0.format(rup), `<div class="delta">${stores.length>1?"tous magasins":esc(storeLabel(S.store))}</div>`],
     ["Secteurs en surstock", n0.format(surs), `<div class="delta">couverture &gt; 90 jours</div>`],
     ["Références dormantes", stores.some(c => (ph.magasins[c]||{}).historique_ventes===false) && !dorm ? "–" : n0.format(dorm),
       `<div class="delta">${stores.some(c => (ph.magasins[c]||{}).historique_ventes===false) ? "aucune vente sur 30 j · non évalué sans historique de ventes" : "aucune vente sur 30 j"}</div>`],
-    ["Commandes en retard", compact(retard), `<div class="delta">valeur restant à livrer</div>`],
-    ["Taux de service fournisseurs", pct(ts), `<div class="delta">ponctualité : ${pct(pu)}</div>`],
+    ["Commandes en retard", compact(retard), `<div class="delta">valeur restant à livrer · ${fm ? esc(storeLabel(S.store)) : "tous magasins"}</div>`],
+    ["Taux de service fournisseurs", pct(ts), `<div class="delta">ponctualité : ${pct(pu)} · 30 j</div>`],
   ];
   document.getElementById("tilesStock").innerHTML = tiles.map(([l,v,d,h]) => `<div class="card tile ${h?'hero':''}"><div class="lbl">${l}</div><div class="val">${v}</div>${d}</div>`).join("");
 
   // Évolution de la valeur de stock
   const sh = S.stHist||[]; const dates = [...new Set(sh.map(r=>r.date))].sort().slice(-60);
   const sv = (d,c) => sh.filter(r=>r.date===d && r.magasin===c).reduce((a,r)=>a+(r.valeur||0),0) || null;
-  draw("cStock", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c=>lineDs(storeLabel(c), dates.map(d=>sv(d,c)), STORE_COLORS[c]||PRIMARY))}});
-  legend("legStock", stores.length>1 ? stores.map(c=>[storeLabel(c), STORE_COLORS[c]]) : []);
+  draw("cStock", {type:"line", data:{labels:dates.map(shortDate), datasets:stores.map(c=>lineDs(storeLabel(c), dates.map(d=>sv(d,c)), storeColor(c)))}});
+  legend("legStock", stores.length>1 ? stores.map(c=>[storeLabel(c), storeColor(c)]) : []);
   dataTable("tStock", ["Date", ...stores.map(storeLabel)], dates.slice(-30).map(d=>[shortDate(d), ...stores.map(c=>{const v=sv(d,c);return v==null?"–":eur0.format(v);})]));
 
   // Carte magasin × secteur (valeur : teinte séquentielle violette)
@@ -405,7 +424,7 @@ function renderStocks(){
   // Fournisseurs
   document.getElementById("fournisseurs").innerHTML = f.length ? `<table><tr><th>Fournisseur</th><th>Secteur</th><th>Taux de service</th><th>Ponctualité</th><th class="n">Délai moyen</th><th class="n">Lignes en retard</th><th class="n">Valeur en retard</th><th class="n">Reste à livrer</th></tr>${f.map(x=>`<tr><td>${esc(x.fournisseur)}</td><td>${esc(x.secteur||"–")}</td><td>${status(x.taux_service_30j)}</td><td>${status(x.ponctualite_30j)}</td><td class="n">${x.delai_moyen_j==null?"–":n1.format(x.delai_moyen_j)+" j"}</td><td class="n">${n0.format(x.lignes_retard)}</td><td class="n">${eur0.format(x.valeur_retard||0)}</td><td class="n">${eur0.format(x.valeur_restante||0)}</td></tr>`).join("")}</table>` : `<div class="empty">Pas encore de données achats.</div>`;
 
-  const rt = ((fo&&fo.retards)||[]).slice(0,10);
+  const rt = ((fm ? fm.retards : fo&&fo.retards)||[]).slice(0,10);
   document.getElementById("retards").innerHTML = rt.length ? `<table><tr><th>Commande</th><th>Fournisseur</th><th>Produit</th><th class="n">Reste</th><th class="n">Retard</th></tr>${rt.map(x=>`<tr><td>${esc(x.doc)}</td><td>${esc(x.fournisseur)}</td><td>${esc(x.produit)}${x.sk?`<br><small style="color:var(--muted)">${esc(x.sk)}</small>`:""}</td><td class="n">${n0.format(x.qte_restante)}</td><td class="n"><span class="st ${x.jours_retard>14?'crit':'warn'}">${x.jours_retard>14?'✕':'!'} ${x.jours_retard} j</span></td></tr>`).join("")}</table>` : `<div class="empty">Aucune commande en retard</div>`;
 
   // Réceptions
@@ -694,24 +713,54 @@ function adminRows(){
   const rows = orgs.map(o => ({o, e: S.aEdit[o.code] || (S.aEdit[o.code] = Object.assign(
     {code:o.code, search_key:o.code, api_name:o.nom, label:o.nom, warehouse:o.entrepots[0]||"", type:"Magasin", ventes:false, stocks:false, reappro:false, prefixe_commande:""},
     conf[o.code]||{}, saved[o.code]||{}, {search_key:o.code, api_name:o.nom}))}));
-  Object.entries(saved).forEach(([sk, m]) => { if(!orgs.some(o=>o.code===sk)) rows.push({o:{code:sk, nom:m.api_name, entrepots:[m.warehouse], magasin:true, absent:true}, e: S.aEdit[sk] || (S.aEdit[sk] = Object.assign({}, m))}); });
+  Object.entries(saved).forEach(([sk, m]) => { if(m.type!=="Entrepôt" && !orgs.some(o=>o.code===sk)) rows.push({o:{code:sk, nom:m.api_name, entrepots:[m.warehouse], magasin:true, absent:true}, e: S.aEdit[sk] || (S.aEdit[sk] = Object.assign({}, m))}); });
+  // entrepôts hors magasin vus dans la photo de stock (dépôt central, transit…) : seulement l'onglet Stocks
+  const known = new Set(rows.map(r=>r.e.code));
+  ((S.photo||{}).emplacements||[]).filter(x => x.type==="Entrepôt" && !known.has(x.code)).forEach(x => {
+    const k = "WH:" + x.code;
+    rows.push({o:{code:x.code, nom:x.label, entrepots:[x.code], magasin:false, entrepot:true, parent:"Entrepôt (photo de stock)"},
+               e: S.aEdit[k] || (S.aEdit[k] = Object.assign({code:x.code, search_key:x.code, api_name:x.label, label:x.label, warehouse:x.code, type:"Entrepôt", ventes:false, stocks:true, reappro:false},
+                                                            saved[x.code]||{}))});
+  });
   return rows;
 }
+// ---- mot de passe de l'onglet (verrou d'interface ; l'écriture reste protégée par le jeton GitHub)
+async function sha256(t){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+const adminUnlocked = () => { const h = (S.admin||{}).mdp_sha256; try { return !h || sessionStorage.getItem("orisha_admin_ok")===h; } catch(e){ return !h; } };
+document.getElementById("aPwdOk").onclick = async () => {
+  const h = await sha256(document.getElementById("aPwdIn").value);
+  if(h === (S.admin||{}).mdp_sha256){ try { sessionStorage.setItem("orisha_admin_ok", h); } catch(e){} document.getElementById("aPwdIn").value = ""; renderAdmin(); }
+  else document.getElementById("aPwdErr").textContent = "Mot de passe incorrect";
+};
+document.getElementById("aPwdIn").addEventListener("keydown", e => { if(e.key==="Enter") document.getElementById("aPwdOk").click(); });
+document.getElementById("btnPwd").onclick = async () => {
+  const p1 = prompt("Nouveau mot de passe d'administration (vide = supprimer la protection) :"); if(p1===null) return;
+  if(p1 && prompt("Confirmez le mot de passe :") !== p1) return aMsg("ko", "Les deux saisies ne correspondent pas");
+  S.admin = Object.assign({}, S.admin||{magasins:[]}, {mdp_sha256: p1 ? await sha256(p1) : undefined});
+  try { sessionStorage.setItem("orisha_admin_ok", S.admin.mdp_sha256 || ""); } catch(e){}
+  aMsg("run", "Mot de passe défini : cliquez sur « Enregistrer » pour l'appliquer.");
+};
 function renderAdmin(){
   S.aEdit = S.aEdit || {};
+  const ok = adminUnlocked();
+  ["aMain"].forEach(id => document.getElementById(id).classList.toggle("hidden", !ok));
+  document.querySelectorAll("#tab-admin .toolbar").forEach(t => t.classList.toggle("hidden", !ok));
+  document.getElementById("aLock").classList.toggle("hidden", ok);
+  if(!ok){ document.getElementById("aPwdErr").textContent = ""; setTimeout(()=>document.getElementById("aPwdIn").focus(), 0); return; }
   document.getElementById("aGhState").innerHTML = document.getElementById("ghState").innerHTML.replace('id="ghEdit"', 'class="ghEdit"');
   if(!S.orgs){ document.getElementById("aTable").innerHTML = `<div class="empty">Liste des magasins pas encore disponible : cliquez sur « Relire les magasins Openbravo ».</div>`; return; }
   document.getElementById("aSub").textContent = `Choisissez les magasins proposés dans chaque onglet. Liste Openbravo relue le ${new Date(S.orgs.maj).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})} (chaque nuit ou avec le bouton).`;
   const all = document.getElementById("aAll").checked;
-  const rows = adminRows().filter(r => all || r.o.magasin || r.e.ventes || r.e.stocks || r.e.reappro);
-  const cb = (r,k) => `<input type="checkbox" data-k="${k}" ${r.e[k]?"checked":""}>`;
-  document.getElementById("aTable").innerHTML = `<table><tr><th>Code</th><th>Organisation Openbravo</th><th>Libellé affiché</th><th>Entrepôt</th><th>Type</th><th class="n">Ventes</th><th class="n">Stocks</th><th class="n">Réappro</th><th>Préfixe des commandes</th></tr>${
+  const rows = adminRows().filter(r => all || r.o.magasin || r.o.entrepot || r.e.ventes || r.e.stocks || r.e.reappro);
+  const cb = (r,k) => `<input type="checkbox" data-k="${k}" ${r.e[k]?"checked":""} ${r.o.entrepot && k!=="stocks" ? "disabled" : ""}>`;
+  document.getElementById("aTable").innerHTML = `<table><tr><th>Code</th><th>Organisation Openbravo</th><th>Libellé affiché</th><th>Entrepôt</th><th>Type</th><th class="n">Couleur</th><th class="n">Ventes</th><th class="n">Stocks</th><th class="n">Réappro</th><th>Préfixe des commandes</th></tr>${
     rows.map(r => { const whs = [...new Set([...(r.o.entrepots||[]), r.e.warehouse].filter(Boolean))];
-      return `<tr data-org="${esc(r.o.code)}"><td>${esc(r.o.code)}${r.e.code!==r.o.code?`<div class="maj">historique : ${esc(r.e.code)}</div>`:""}</td>
+      return `<tr data-org="${esc(r.o.entrepot ? "WH:"+r.o.code : r.o.code)}"><td>${esc(r.o.code)}${r.e.code!==r.o.code?`<div class="maj">historique : ${esc(r.e.code)}</div>`:""}</td>
         <td>${esc(r.o.nom||"")}<div class="maj">${r.o.absent?'<span class="st crit">introuvable dans Openbravo</span>':esc(r.o.parent||"")}</div></td>
         <td><input type="text" data-k="label" value="${esc(r.e.label||"")}" style="width:180px"></td>
         <td>${whs.length>1||!whs.length ? `<select data-k="warehouse">${whs.map(w=>`<option ${w===r.e.warehouse?"selected":""}>${esc(w)}</option>`).join("")}</select>` : esc(whs[0])}</td>
-        <td><select data-k="type">${["Magasin","Web"].map(t=>`<option ${t===r.e.type?"selected":""}>${t}</option>`).join("")}</select></td>
+        <td>${r.o.entrepot ? "Entrepôt" : `<select data-k="type">${["Magasin","Web"].map(t=>`<option ${t===r.e.type?"selected":""}>${t}</option>`).join("")}</select>`}</td>
+        <td class="n"><input type="color" data-k="couleur" value="${r.e.couleur || storeColor(r.e.code)}" title="Couleur dans les graphiques"></td>
         <td class="n">${cb(r,"ventes")}</td><td class="n">${cb(r,"stocks")}</td><td class="n">${cb(r,"reappro")}</td>
         <td><input type="text" data-k="prefixe_commande" value="${esc(r.e.prefixe_commande||"")}" placeholder="ex. FR11-PO-" style="width:110px" ${r.e.reappro?"":"disabled"}></td></tr>`; }).join("")}</table>`;
 }
@@ -734,12 +783,13 @@ document.getElementById("btnOrgs").onclick = async () => {
 };
 document.getElementById("btnSaveAdmin").onclick = async () => {
   if(!ghToken()) return openGh();
-  const ms = adminRows().map(r=>r.e).filter(e => e.ventes || e.stocks || e.reappro)
+  const ms = adminRows().map(r=>r.e).filter(e => e.ventes || e.stocks || e.reappro || e.type==="Entrepôt")
     .map(e => ({code:e.code, search_key:e.search_key, api_name:e.api_name, label:e.label||e.api_name, warehouse:e.warehouse, type:e.type,
-                ventes:!!e.ventes, stocks:!!e.stocks, reappro:!!e.reappro, prefixe_commande:e.reappro ? (e.prefixe_commande || `${e.code}-PO-`) : undefined}));
+                ventes:!!e.ventes, stocks:!!e.stocks, reappro:!!e.reappro, couleur:e.couleur || undefined,
+                prefixe_commande:e.reappro ? (e.prefixe_commande || `${e.code}-PO-`) : undefined}));
   if(!ms.some(m=>m.ventes||m.stocks)) return aMsg("ko", "Cochez au moins un magasin pour les ventes ou les stocks.");
   const sansEnt = ms.filter(m=>!m.warehouse); if(sansEnt.length) return aMsg("ko", `Entrepôt manquant : ${sansEnt.map(m=>esc(m.label)).join(", ")}`);
-  const body = JSON.stringify({maj:new Date().toISOString(), magasins:ms}, null, 2);
+  const body = JSON.stringify({maj:new Date().toISOString(), mdp_sha256:(S.admin||{}).mdp_sha256 || undefined, magasins:ms}, null, 2);
   try { aMsg("run", "Enregistrement…");
     const path = "docs/data/admin/magasins.json"; let sha; try { sha = (await ghApi(`/contents/${path}?ref=main`)).sha; } catch(_) {}
     await ghApi(`/contents/${path}`, {method:"PUT", headers:{"Content-Type":"application/json"},
